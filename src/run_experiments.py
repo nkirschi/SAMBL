@@ -37,6 +37,18 @@ from analysis import (
 
 
 BENCHMARKS = {
+    "d8": ExperimentConfig(
+        x_dim=8,
+        u_dim=3,
+        sparsity=7,
+        T=1.4,
+        dt=0.04,
+        max_episodes=120,
+        n_seeds=5,
+        sigma=0.3,
+        lambda_lasso=0.02,
+        sigma_u=0.10,
+    ),
     "d10": ExperimentConfig(
         x_dim=10,
         u_dim=3,
