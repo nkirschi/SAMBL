@@ -188,6 +188,36 @@ class SparseGreedyAgent(Agent):
         self._solve_dre(A_est, B_est)
 
 
+class DenseExcitationAgent(Agent):
+    """
+    Ridge regression estimator + DRE feedback + additive excitation.
+    """
+
+    def __init__(
+        self, config, Q, R, A_init, B_init, sigma_u, excitation_rng=None, mu=0.01
+    ):
+        super().__init__(config, Q, R)
+        self.estimator = DiscreteRidgeEstimator(config.x_dim, config.u_dim, mu=mu)
+        self.sigma_u = sigma_u
+        self._exc_rng = excitation_rng or np.random.RandomState(0)
+
+        # Initialise with prior
+        self.A_est = A_init.copy()
+        self.B_est = B_init.copy()
+        self._solve_dre(A_init, B_init)
+
+    def get_control(self, t, x):
+        u_fb = self._get_feedback(t, x)
+        eta = self._exc_rng.randn(self.config.u_dim) * self.sigma_u
+        return u_fb + eta
+
+    def update(self, buffer):
+        A_est, B_est = self.estimator.estimate(buffer)
+        self.A_est = A_est
+        self.B_est = B_est
+        self._solve_dre(A_est, B_est)
+
+
 class SparseExcitationAgent(Agent):
     """
     Row-wise Lasso estimator + DRE feedback + additive excitation.
@@ -203,7 +233,7 @@ class SparseExcitationAgent(Agent):
         R,
         A_init,
         B_init,
-        sigma_u=0.1,
+        sigma_u,
         excitation_rng=None,
         lambda_fixed=None,
         sigma_bar=None,
