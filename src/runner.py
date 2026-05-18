@@ -1,6 +1,5 @@
 """
 Core experimental loop with matched-seed design.
-
 Each seed defines one system and one noise stream shared across all agents.
 """
 
@@ -9,19 +8,35 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from dynamics import ContinuousLQREnv
-from estimator import RegressionBuffer, RowLassoEstimator
+from estimator import RegressionBuffer
 from system_generator import sample_sparse_system, define_cost_matrices
 from agent import (
     OracleAgent,
     DenseGreedyAgent,
+    DenseExcitedAgent,
     SparseGreedyAgent,
-    SparseExcitationAgent,
+    SparseExcitedAgent,
 )
 from diagnostics import collect_diagnostics, episode_cost
-from tqdm import tqdm
+
+try:
+    from tqdm import tqdm
+except ImportError:
+
+    def tqdm(iterable, **kwargs):
+        return iterable
 
 
-AGENT_NAMES = ["oracle", "dense_greedy", "sparse_greedy", "sparse_excitation"]
+# All known agent names; actual agents run are determined by exp_config.agents
+ALL_AGENT_NAMES = (
+    "oracle",
+    "dense_greedy",
+    "dense_excited",
+    "sparse_greedy",
+    "sparse_excited",
+)
+
+_EXCITATION_TYPES = (DenseExcitedAgent, SparseExcitedAgent)
 
 
 @dataclass
@@ -29,7 +44,7 @@ class EpisodeRecord:
     """Per-episode results for one agent."""
 
     cost: float = 0.0
-    excitation_tax: float = 0.0  # sigma_u^2 * tr(R) * T, used for adjusted regret
+    excitation_tax: float = 0.0  # sigma_u^2 * tr(R) * T; nonzero for excitation agents
     diagnostics: dict = field(default_factory=dict)
 
 
@@ -41,8 +56,6 @@ class SeedResult:
     A_star: np.ndarray = None
     B_star: np.ndarray = None
     supports: list = None
-
-    # Per-agent: dict[agent_name] -> list[EpisodeRecord]
     episodes: Dict[str, List[EpisodeRecord]] = field(default_factory=dict)
 
     @property
@@ -50,221 +63,196 @@ class SeedResult:
         return list(self.episodes.keys())
 
     def cumulative_regret(self, agent_name, oracle_name="oracle"):
-        """Cumulative regret relative to oracle."""
         oracle_costs = np.array([ep.cost for ep in self.episodes[oracle_name]])
         agent_costs = np.array([ep.cost for ep in self.episodes[agent_name]])
         return np.cumsum(agent_costs - oracle_costs)
 
     def adjusted_cumulative_regret(self, agent_name, oracle_name="oracle"):
-        """
-        Cumulative regret with the deterministic excitation tax removed.
-
-        For excitation agents, the observed cost includes sigma_u^2 * tr(R) * T
-        per episode regardless of learning quality.  Subtracting this
-        isolates the feedback suboptimality from the exploration overhead,
-        placing all agents on a comparable scale.
-
-        For non-excitation agents, excitation_tax == 0 so this equals
-        cumulative_regret.
-        """
+        """Cumulative regret with the deterministic excitation tax removed."""
         oracle_costs = np.array([ep.cost for ep in self.episodes[oracle_name]])
         agent_costs = np.array([ep.cost for ep in self.episodes[agent_name]])
-        excit_taxes = np.array([ep.excitation_tax for ep in self.episodes[agent_name]])
-        return np.cumsum(agent_costs - excit_taxes - oracle_costs)
+        taxes = np.array([ep.excitation_tax for ep in self.episodes[agent_name]])
+        return np.cumsum(agent_costs - taxes - oracle_costs)
 
     def final_cumulative_regret(self, agent_name, oracle_name="oracle"):
         return self.cumulative_regret(agent_name, oracle_name)[-1]
 
     def diagnostic_trajectory(self, agent_name, key):
-        """Extract a single diagnostic across episodes."""
         return [ep.diagnostics.get(key, np.nan) for ep in self.episodes[agent_name]]
 
 
 def _make_stabilising_init(d, p, margin=1.0):
-    """
-    Return a simple stabilising initial estimate.
-
-    Uses A_init = -margin * I, B_init = 0.
-    The closed-loop under DRE with these parameters is stable
-    since the drift is strongly negative.
-    """
-    A_init = -margin * np.eye(d)
-    B_init = np.zeros((d, p))  # TODO: eliminate the need for placeholder estimates
-    return A_init, B_init
+    return -margin * np.eye(d), np.zeros(
+        (d, p)
+    )  # TODO: eliminate the need for placeholder estimates
 
 
-def _create_agents(exp_config, sys_config, Q, R, A_star, B_star, seed):
-    """
-    Instantiate all four agents.
-
-    Returns dict[agent_name] -> Agent.
-    """
-    d = exp_config.x_dim
-    p = exp_config.u_dim
-    M = exp_config.max_episodes
-
-    A_init, B_init = _make_stabilising_init(d, p)
-
-    agents = {}
-
-    agents["oracle"] = OracleAgent(sys_config, Q, R, A_star, B_star)
-
-    agents["dense_greedy"] = DenseGreedyAgent(
-        sys_config, Q, R, A_init, B_init, mu=exp_config.mu_ridge
-    )
-
-    # Lasso kwargs (shared between sparse agents)
-    lasso_kwargs = dict(
+def _build_lasso_kwargs(exp_config):
+    """Build keyword arguments for SparseGreedyAgent / SparseExcitedAgent."""
+    common = dict(max_iter=exp_config.lasso_max_iter, tol=exp_config.lasso_tol)
+    if exp_config.lambda_lasso is not None:
+        return dict(lambda_fixed=exp_config.lambda_lasso, **common)
+    return dict(
         sigma_bar=exp_config.sigma_bar,
         c_lambda=exp_config.c_lambda,
         delta=exp_config.delta,
-        max_episodes=M,
-    )
-    if exp_config.lambda_lasso is not None:
-        lasso_kwargs = dict(lambda_fixed=exp_config.lambda_lasso)
-
-    agents["sparse_greedy"] = SparseGreedyAgent(
-        sys_config, Q, R, A_init, B_init, **lasso_kwargs
+        max_episodes=exp_config.max_episodes,
+        **common,
     )
 
-    # Independent excitation RNG seeded deterministically from main seed
-    exc_rng = np.random.RandomState(seed + 1_000_000)
 
-    agents["sparse_excitation"] = SparseExcitationAgent(
-        sys_config,
-        Q,
-        R,
-        A_init,
-        B_init,
-        sigma_u=exp_config.sigma_u,
-        excitation_rng=exc_rng,
-        **lasso_kwargs,
-    )
+def _create_agents(exp_config, sys_config, Q, R, A_star, B_star, seed):
+    """Instantiate the agents listed in exp_config.agents."""
+    d, p = exp_config.x_dim, exp_config.u_dim
+    A_init, B_init = _make_stabilising_init(d, p)
+    lasso_kw = _build_lasso_kwargs(exp_config)
+    requested = set(exp_config.agents)
+    agents = {}
 
-    return agents
+    if "oracle" in requested:
+        agents["oracle"] = OracleAgent(sys_config, Q, R, A_star, B_star)
+
+    if "dense_greedy" in requested:
+        agents["dense_greedy"] = DenseGreedyAgent(
+            sys_config, Q, R, A_init, B_init, mu=exp_config.mu_ridge
+        )
+
+    if "dense_excited" in requested:
+        agents["dense_excited"] = DenseExcitedAgent(
+            sys_config,
+            Q,
+            R,
+            A_init,
+            B_init,
+            sigma_u=exp_config.sigma_u,
+            excitation_rng=np.random.RandomState(seed + 1_500_000),
+            mu=exp_config.mu_ridge,
+        )
+
+    if "sparse_greedy" in requested:
+        agents["sparse_greedy"] = SparseGreedyAgent(
+            sys_config, Q, R, A_init, B_init, **lasso_kw
+        )
+
+    if "sparse_excited" in requested:
+        agents["sparse_excited"] = SparseExcitedAgent(
+            sys_config,
+            Q,
+            R,
+            A_init,
+            B_init,
+            sigma_u=exp_config.sigma_u,
+            excitation_rng=np.random.RandomState(seed + 1_000_000),
+            **lasso_kw,
+        )
+
+    # Preserve the order specified in exp_config.agents
+    return {name: agents[name] for name in exp_config.agents if name in agents}
 
 
 def run_paired_experiment(exp_config, seed, verbose=False):
-    """
-    Run one paired-seed experiment: all agents on the same system and noise.
-
-    Parameters
-    ----------
-    exp_config : ExperimentConfig
-    seed : int
-    verbose : bool
-        Print progress every 10 episodes.
-
-    Returns
-    -------
-    SeedResult
-    """
-    d = exp_config.x_dim
-    p = exp_config.u_dim
-    M = exp_config.max_episodes
-    H = exp_config.H
+    """Run one paired-seed experiment: all configured agents on the same system and noise."""
+    d, p = exp_config.x_dim, exp_config.u_dim
+    M, H = exp_config.max_episodes, exp_config.H
     dt = exp_config.dt
     sigma = exp_config.sigma
 
-    # Sample system
+    # Sample system using per-block sparsity and scale params from config
     A_star, B_star, supports, n_attempts = sample_sparse_system(
-        d, p, exp_config.sparsity, seed
+        d=d,
+        p=p,
+        s_A=exp_config.s_A,
+        s_B=exp_config.s_B,
+        seed=seed,
+        a_scale=exp_config.a_scale,
+        b_scale=exp_config.b_scale,
+        coeff_lower=exp_config.coeff_lower,
+        max_instability=exp_config.max_instability,
     )
-    Q, R = define_cost_matrices(d, p)
+    Q, R = define_cost_matrices(
+        d, p, q_diag=exp_config.q_diag, r_diag=exp_config.r_diag
+    )
 
     if verbose:
         print(f"Sampled system after {n_attempts} attempt(s)")
 
     sys_config = exp_config.system_config
 
-    # Pre-generate shared noise: (M, H, d) standard normals
+    # Pre-generate shared noise
     noise_rng = np.random.RandomState(seed + 2_000_000)
     shared_noise = noise_rng.randn(M, H, d)
 
-    # deterministic RNG for the pure exploration phase
+    # Pre-generate shared exploration controls (same for all agents → paired design)
     m_explore = int(np.ceil(2 * (d + p) / H))
     explore_rng = np.random.RandomState(seed + 3_000_000)
     shared_exploration = explore_rng.randn(m_explore, H, p) * sigma
 
+    # Checkpoint episodes for matrix snapshots
     n_checkpoints = min(8, M)
     checkpoint_set = set(
         np.round(np.linspace(0, M - 1, n_checkpoints)).astype(int).tolist()
     )
 
-    x0 = np.zeros(d)
+    # Initial condition
+    if exp_config.x0_std > 0:
+        x0_rng = np.random.RandomState(seed + 4_000_000)
+        x0 = x0_rng.randn(d) * exp_config.x0_std
+    else:
+        x0 = np.zeros(d)
 
-    # Create agents
     agents = _create_agents(exp_config, sys_config, Q, R, A_star, B_star, seed)
+    agent_names = list(agents.keys())
+    learning_names = [n for n in agent_names if n != "oracle"]
 
-    # Create per-agent data buffers
-    buffers = {
-        name: RegressionBuffer(d, p, M, H) for name in AGENT_NAMES if name != "oracle"
-    }
-
-    # Noise covariance (assumed diagonal sigma * I)
+    buffers = {name: RegressionBuffer(d, p, M, H) for name in learning_names}
     Sigma = sigma * np.eye(d)
 
-    # Result container
     result = SeedResult(
         seed=seed,
         A_star=A_star,
         B_star=B_star,
         supports=supports,
-        episodes={name: [] for name in AGENT_NAMES},
+        episodes={name: [] for name in agent_names},
     )
+
     for m in tqdm(range(M), disable=not verbose):
-        for name in AGENT_NAMES:
+        for name in agent_names:
             agent = agents[name]
             env = ContinuousLQREnv(A_star, B_star, Sigma, x0, sys_config)
 
-            # Collect trajectory
-            states = []
-            controls = []
-            zs_list = []
-            ys_list = []
-
-            x = env.reset()
+            states, controls, zs_list, ys_list = [], [], [], []
+            x = x0.copy()
 
             for k in range(H):
                 t = k * dt
 
                 if name != "oracle" and m < m_explore:
-                    # Inject random Gaussian noise matching the state variance
                     u = shared_exploration[m, k]
                 else:
                     u = agent.get_control(t, x)
 
-                # Step with shared noise
-                x_new, dx, step_dt = env.step(u, noise_override=shared_noise[m, k])
+                x_new, dx, _ = env.step(u, noise_override=shared_noise[m, k])
 
-                # Regression data: z_k = [x_k; u_k], y_k = dx / dt
-                z_k = np.concatenate([x, u])
-                y_k = dx / dt
-
+                zs_list.append(np.concatenate([x, u]))
+                ys_list.append(dx / dt)
                 states.append(x.copy())
                 controls.append(u.copy())
-                zs_list.append(z_k)
-                ys_list.append(y_k)
-
                 x = x_new
 
-            # Compute episode cost
             cost = episode_cost(states, controls, Q, R, dt)
-            excitation_tax = (
+            tax = (
                 agent.sigma_u**2 * float(np.trace(R)) * exp_config.T
-                if isinstance(agent, SparseExcitationAgent)
+                if isinstance(agent, _EXCITATION_TYPES)
                 else 0.0
             )
 
-            # Update agent estimate (not for oracle)
             if name != "oracle":
-                zs = np.stack(zs_list)  # (H, d+p)
-                ys = np.stack(ys_list)  # (H, d)
+                zs = np.stack(zs_list)
+                ys = np.stack(ys_list)
                 buffers[name].add_episode(zs, ys)
                 agent.update(buffers[name])
 
-            # Collect diagnostics
-            buf = buffers.get(name, None)
+            buf = buffers.get(name)
             diag = (
                 collect_diagnostics(
                     agent,
@@ -285,36 +273,19 @@ def run_paired_experiment(exp_config, seed, verbose=False):
                 diag["B_est"] = agent.B_est.copy()
 
             result.episodes[name].append(
-                EpisodeRecord(
-                    cost=cost, excitation_tax=excitation_tax, diagnostics=diag
-                )
+                EpisodeRecord(cost=cost, excitation_tax=tax, diagnostics=diag)
             )
 
     return result
 
 
 def run_benchmark(exp_config, seeds=None, verbose=False):
-    """
-    Run a full benchmark across multiple seeds.
-
-    Parameters
-    ----------
-    exp_config : ExperimentConfig
-    seeds : list of int, or None (defaults to range(n_seeds))
-    verbose : bool
-
-    Returns
-    -------
-    list of SeedResult
-    """
+    """Run a full benchmark across multiple seeds."""
     if seeds is None:
         seeds = list(range(exp_config.n_seeds))
-
     results = []
     for i, seed in enumerate(seeds):
         if verbose:
-            print(f"Running seed {i + 1}/{len(seeds)} (seed={seed})")
-        res = run_paired_experiment(exp_config, seed, verbose=verbose)
-        results.append(res)
-
+            print(f"Seed {i + 1}/{len(seeds)} (seed={seed})")
+        results.append(run_paired_experiment(exp_config, seed, verbose=verbose))
     return results

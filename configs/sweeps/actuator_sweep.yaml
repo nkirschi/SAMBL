@@ -1,0 +1,8 @@
+# Vary control dimension; s_B scales to stay within bounds
+base: d20
+name_prefix: actuator
+vary:
+  - {u_dim: 2,  s_B: 1}
+  - {u_dim: 5,  s_B: 1}
+  - {u_dim: 10, s_B: 2}
+  - {u_dim: 20, s_B: 3}

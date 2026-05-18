@@ -1,0 +1,44 @@
+# Quick smoke test
+name: quick
+
+system:
+  x_dim: 6
+  u_dim: 2
+  s_A: 1
+  s_B: 1
+  a_scale: 0.5
+  b_scale: 0.5
+  coeff_lower: 0.1
+  max_instability: 1.0
+
+simulation:
+  T: 1.0
+  dt: 0.1
+  sigma: 0.1
+  x0_std: 0.0
+
+cost:
+  q_diag: 1.0
+  r_diag: 1.0
+
+training:
+  max_episodes: 8
+  n_seeds: 3
+
+agents:
+  - oracle
+  - dense_greedy
+  - dense_excited
+  - sparse_greedy
+  - sparse_excited
+
+estimation:
+  lambda_lasso: null
+  c_lambda: 0.3
+  delta: 0.05
+  mu_ridge: 0.01
+  lasso_max_iter: 5000
+  lasso_tol: 1.0e-4
+
+excitation:
+  sigma_u: 0.05

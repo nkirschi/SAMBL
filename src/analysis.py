@@ -58,7 +58,7 @@ def cumulative_regret_trajectories(
     Cumulative regret trajectories, shape (n_seeds, M).
 
     adjusted=True (default) calls adjusted_cumulative_regret, which subtracts
-    the deterministic excitation tax per episode for SparseExcitationAgent.
+    the deterministic excitation tax per episode for SparseExcitedAgent.
     Has no effect on other agents (their tax is zero).  Pass adjusted=False
     to retrieve the raw observed regret.
     """
@@ -177,7 +177,7 @@ def all_pairwise_tests(results, dense_name="dense_greedy", sparse_names=None):
     dict[comparison_label] -> dict with t_test, wilcoxon, sign_test results.
     """
     if sparse_names is None:
-        sparse_names = ["sparse_greedy", "sparse_excitation"]
+        sparse_names = ["sparse_greedy", "sparse_excited"]
 
     output = {}
     for sp in sparse_names:
@@ -285,10 +285,10 @@ def final_summary_table(results, agent_names=None, oracle_name="oracle"):
     Summary of final-episode statistics.
 
     Reports both adjusted and raw final cumulative regret for
-    sparse_excitation; for all other agents they are identical.
+    sparse_excited; for all other agents they are identical.
     """
     if agent_names is None:
-        agent_names = ["dense_greedy", "sparse_greedy", "sparse_excitation"]
+        agent_names = ["dense_greedy", "sparse_greedy", "sparse_excited"]
 
     def _stats(vals):
         n = len(vals)
@@ -360,19 +360,19 @@ def plot_trajectories(results, exp_config, save_path=None):
     """
     import matplotlib.pyplot as plt
 
-    LEARNING_AGENTS = ["dense_greedy", "sparse_greedy", "sparse_excitation"]
+    LEARNING_AGENTS = ["dense_greedy", "sparse_greedy", "sparse_excited"]
     ALL_AGENTS = ["oracle"] + LEARNING_AGENTS
     COLORS = {
         "oracle": "green",
         "dense_greedy": "orange",
         "sparse_greedy": "blue",
-        "sparse_excitation": "red",
+        "sparse_excited": "red",
     }
     LABELS = {
         "oracle": "Oracle",
         "dense_greedy": "Dense-Greedy",
         "sparse_greedy": "Sparse-Greedy",
-        "sparse_excitation": "Sparse-Excitation",
+        "sparse_excited": "Sparse-Excitation",
     }
 
     M = len(results[0].episodes["oracle"])
@@ -451,7 +451,7 @@ def plot_trajectories(results, exp_config, save_path=None):
                     data = np.zeros((len(results), M))
                 else:
                     raw_ep = per_episode_regret_trajectories(results, name, "oracle")
-                    if name == "sparse_excitation":
+                    if name == "sparse_excited":
                         taxes = np.array(
                             [
                                 [ep.excitation_tax for ep in r.episodes[name]]
@@ -464,11 +464,13 @@ def plot_trajectories(results, exp_config, save_path=None):
                         data = raw_ep
             elif key == "episode_cost":
                 raw_cost = cost_trajectories(results, name)
-                if name == "sparse_excitation":
-                    taxes = np.array([
-                        [ep.excitation_tax for ep in r.episodes[name]]
-                        for r in results
-                    ])
+                if name == "sparse_excited":
+                    taxes = np.array(
+                        [
+                            [ep.excitation_tax for ep in r.episodes[name]]
+                            for r in results
+                        ]
+                    )
                     data = raw_cost - taxes  # adjusted cost (solid)
                 else:
                     data = raw_cost
@@ -496,7 +498,7 @@ def plot_trajectories(results, exp_config, save_path=None):
 
             # For the excitation agent on both regret panels, overlay the raw
             # trajectory as a dashed line so the exploration tax is visible.
-            if key == "cumul_regret" and name == "sparse_excitation":
+            if key == "cumul_regret" and name == "sparse_excited":
                 raw = cumulative_regret_trajectories(
                     results, name, "oracle", adjusted=False
                 )
@@ -510,7 +512,7 @@ def plot_trajectories(results, exp_config, save_path=None):
                     label="Sparse-Excitation (raw)",
                     alpha=0.55,
                 )
-            elif key == "per_ep_regret" and name == "sparse_excitation":
+            elif key == "per_ep_regret" and name == "sparse_excited":
                 raw_ep = per_episode_regret_trajectories(results, name, "oracle")
                 raw_mean, _, _ = mean_and_ci(raw_ep, axis=0)
                 ax.plot(
@@ -522,7 +524,7 @@ def plot_trajectories(results, exp_config, save_path=None):
                     label="Sparse-Excitation (raw)",
                     alpha=0.55,
                 )
-            elif key == "episode_cost" and name == "sparse_excitation":
+            elif key == "episode_cost" and name == "sparse_excited":
                 raw_cost = cost_trajectories(results, name)
                 raw_mean, _, _ = mean_and_ci(raw_cost, axis=0)
                 ax.plot(
@@ -620,7 +622,7 @@ def plot_sparsity_evolution(results, exp_config, output_dir):
     For each seed, save two heatmap figures (A block and B block) showing
     how the estimated sparsity pattern evolves over checkpoint episodes.
 
-    Layout: 3 rows (dense_greedy, sparse_greedy, sparse_excitation),
+    Layout: 3 rows (dense_greedy, sparse_greedy, sparse_excited),
     first column = true matrix, remaining columns = estimates at
     evenly-spaced checkpoint episodes.
 
@@ -645,11 +647,11 @@ def plot_sparsity_evolution(results, exp_config, output_dir):
     except Exception:
         pass
 
-    LEARNING_AGENTS = ["dense_greedy", "sparse_greedy", "sparse_excitation"]
+    LEARNING_AGENTS = ["dense_greedy", "sparse_greedy", "sparse_excited"]
     AGENT_LABELS = {
         "dense_greedy": "Dense-Greedy",
         "sparse_greedy": "Sparse-Greedy",
-        "sparse_excitation": "Sparse-Excitation",
+        "sparse_excited": "Sparse-Excitation",
     }
 
     d = exp_config.x_dim
@@ -773,7 +775,7 @@ def plot_error_evolution(results, exp_config, output_dir):
     For each seed, save two heatmap figures showing how the absolute
     estimation error |A_hat - A_true| and |B_hat - B_true| evolves.
 
-    Layout: 3 rows (dense_greedy, sparse_greedy, sparse_excitation),
+    Layout: 3 rows (dense_greedy, sparse_greedy, sparse_excited),
     first column = |A_true| or |B_true| as a reference for scale,
     remaining columns = |A_hat_m - A_true| at checkpoint episodes.
 
@@ -789,11 +791,11 @@ def plot_error_evolution(results, exp_config, output_dir):
     import matplotlib.pyplot as plt
     import os
 
-    LEARNING_AGENTS = ["dense_greedy", "sparse_greedy", "sparse_excitation"]
+    LEARNING_AGENTS = ["dense_greedy", "sparse_greedy", "sparse_excited"]
     AGENT_LABELS = {
         "dense_greedy": "Dense-Greedy",
         "sparse_greedy": "Sparse-Greedy",
-        "sparse_excitation": "Sparse-Excitation",
+        "sparse_excited": "Sparse-Excitation",
     }
 
     d = exp_config.x_dim

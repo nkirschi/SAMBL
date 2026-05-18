@@ -1,21 +1,18 @@
 """
 Generates random sparse linear-quadratic systems for benchmarking.
 
-Each row of Theta_star = [A_star  B_star] has at most s nonzero entries.
+Each row of [A_star | B_star] has exactly s_A nonzeros
+in the A block and s_B nonzeros in the B block.
 
-Design choices (kept simple deliberately):
-- Exact per-row sparsity s (matches the theory).
-- Coefficient magnitudes drawn from Uniform(0.3, 1.0) with random sign,
-  giving a signal gap that prevents near-zero coefficients.
-- No artificial stability shift: A is accepted as sampled, allowing
-  the algorithm to be tested on the full class of stabilisable systems,
-  which is the condition the theory actually requires.
-- Rejection sampling on three criteria:
-    (i)  No all-zero columns in B (every control direction must be active).
-    (ii) Stabilisability: all unstable modes of A are reachable from B,
-         verified via the Hautus lemma at each eigenvalue with Re >= 0.
-    (iii) Bounded instability: max Re(lambda(A)) <= max_instability,
-         so exploration episodes do not cause exponential state blowup.
+Coefficient magnitude distribution for block X with scale x_scale:
+    magnitude ~ Uniform(coeff_lower, 2 * x_scale - coeff_lower)
+    sign      ~ Uniform({-1, +1})
+so that E[|coeff|] = x_scale and minimum magnitude = coeff_lower.
+
+Rejection sampling on three criteria:
+    (i)  No all-zero columns in B.
+    (ii) Bounded instability: max Re(lambda(A)) <= max_instability.
+    (iii) Stabilisability via the Hautus lemma.
 """
 
 import numpy as np
@@ -26,9 +23,12 @@ from numpy.typing import NDArray
 def sample_sparse_system(
     d: int,
     p: int,
-    s: int,
+    s_A: int,
+    s_B: int,
     seed: int,
-    coeff_magnitude: Tuple[float, float] = (0.3, 1.0),
+    a_scale: float = 0.5,
+    b_scale: float = 0.5,
+    coeff_lower: float = 0.1,
     max_instability: float = 1.0,
     max_attempts: int = 100,
 ) -> Tuple[NDArray[np.float64], NDArray[np.float64], List[Set[int]], int]:
@@ -41,52 +41,67 @@ def sample_sparse_system(
         State dimension.
     p : int
         Control dimension.
-    s : int
-        Exact number of nonzeros per row of [A B].
+    s_A : int
+        Exact nonzeros per row in the A block. Must satisfy 0 < s_A <= d.
+    s_B : int
+        Exact nonzeros per row in the B block. Must satisfy 0 < s_B <= p.
     seed : int
         Random seed.
-    coeff_magnitude : Tuple[float, float]
-        Range from which to draw coefficient magnitudes uniformly.
+    a_scale : float
+        Expected absolute value of nonzero A entries (> coeff_lower).
+    b_scale : float
+        Expected absolute value of nonzero B entries (> coeff_lower).
+    coeff_lower : float
+        Minimum nonzero magnitude; defines the Lasso signal gap.
     max_instability : float
-        Maximum allowed real part of any eigenvalue of A.
-        Limits exponential state growth during the exploration phase
-        (state grows at most by e^{max_instability * T} per episode).
-        Default 1.0 corresponds to e^1 ≈ 2.7-fold growth over T=1.
+        Maximum allowed Re(lambda(A)); limits state blowup during exploration.
     max_attempts : int
-        Maximum rejection-sampling attempts.
+        Rejection-sampling budget.
 
     Returns
     -------
     A_star, B_star, supports, n_attempts
+        supports[i] is the set of global column indices (in [0, d+p)) for
+        row i of [A | B].
     """
-    assert coeff_magnitude[1] > coeff_magnitude[0] > 0, "Need 0 < a < b"
+    assert 0 < s_A <= d, f"s_A={s_A} must be in (0, d={d}]"
+    assert 0 < s_B <= p, f"s_B={s_B} must be in (0, p={p}]"
+    assert a_scale > coeff_lower > 0, (
+        f"Need 0 < coeff_lower={coeff_lower} < a_scale={a_scale}"
+    )
+    assert b_scale > coeff_lower, f"Need coeff_lower={coeff_lower} < b_scale={b_scale}"
+
+    a_upper = 2.0 * a_scale - coeff_lower
+    b_upper = 2.0 * b_scale - coeff_lower
 
     rng = np.random.default_rng(seed)
 
     for attempt in range(1, max_attempts + 1):
-        Theta = np.zeros((d, d + p), dtype=np.float64)
-        supports = []  # TODO: separate A and B sparsity as option
+        A = np.zeros((d, d), dtype=np.float64)
+        B = np.zeros((d, p), dtype=np.float64)
+        supports = []
 
         for i in range(d):
-            idx = rng.choice(d + p, size=s, replace=False)
-            supports.append(set(int(j) for j in idx))
-            for j in idx:
-                magnitude = rng.uniform(*coeff_magnitude)
-                sign = rng.choice([-1, 1])
-                Theta[i, j] = sign * magnitude
+            # A block: choose columns from [0, d)
+            a_cols = rng.choice(d, size=s_A, replace=False)
+            # B block: choose columns from [0, p)
+            b_cols = rng.choice(p, size=s_B, replace=False)
 
-        A = Theta[:, :d]
-        B = Theta[:, d:]
+            for j in a_cols:
+                A[i, j] = rng.choice([-1, 1]) * rng.uniform(coeff_lower, a_upper)
+            for j in b_cols:
+                B[i, j] = rng.choice([-1, 1]) * rng.uniform(coeff_lower, b_upper)
 
-        # TODO: if necessary also enforce at least two nonzeros per row of B
+            # Global column indices for [A | B]: A in [0, d), B in [d, d+p)
+            supports.append({int(j) for j in a_cols} | {int(j + d) for j in b_cols})
+
         # (i) No inactive control direction
-        if p > 0 and np.any(np.all(B == 0, axis=0)):
+        if np.any(np.all(B == 0, axis=0)):
             continue
 
         # (ii) Bounded instability
         eigenvalues = np.linalg.eigvals(A)
-        max_real = float(np.max(np.real(eigenvalues)))
-        if max_real > max_instability:
+        if float(np.max(np.real(eigenvalues))) > max_instability:
             continue
 
         # (iii) Stabilisability
@@ -96,9 +111,9 @@ def sample_sparse_system(
         return A, B, supports, attempt
 
     raise RuntimeError(
-        f"Failed to sample valid system after {max_attempts} "
-        f"attempts (d={d}, p={p}, s={s}, seed={seed}). "
-        f"Consider increasing max_instability or max_attempts."
+        f"Failed to sample a valid system after {max_attempts} attempts "
+        f"(d={d}, p={p}, s_A={s_A}, s_B={s_B}, "
+        f"seed={seed}). Consider increasing max_instability or max_attempts."
     )
 
 
@@ -114,20 +129,6 @@ def _is_stabilisable(
     (A, B) is stabilisable iff rank([lambda*I - A, B]) = d
     for every eigenvalue lambda of A with Re(lambda) >= 0.
 
-    Only unstable eigenvalues need to be checked: for stable eigenvalues
-    (Re(lambda) < 0) the condition is automatically satisfied because any
-    stabilising feedback leaves those modes stable.
-
-    Parameters
-    ----------
-    A : NDArray (d, d)
-    B : NDArray (d, p)
-    eigenvalues : NDArray or None
-        Pre-computed eigenvalues of A. Passed in to avoid recomputing
-        when already available from the instability check.
-    tol : float
-        Rank tolerance.
-
     References
     ----------
     Hespanha, "Linear Systems Theory" (2018), Theorem 14.3
@@ -135,13 +136,11 @@ def _is_stabilisable(
     d = A.shape[0]
     if eigenvalues is None:
         eigenvalues = np.linalg.eigvals(A)
-
     for lam in eigenvalues:
         if np.real(lam) >= 0:
             block = np.hstack([lam * np.eye(d) - A, B])
             if np.linalg.matrix_rank(block, tol=tol) < d:
                 return False
-
     return True
 
 
@@ -157,8 +156,6 @@ def _is_controllable(
     (A, B) is controllable iff rank([lambda*I - A, B]) = d
     for every eigenvalue lambda of A.
 
-    Kept for reference and testing; the sampler uses _is_stabilisable.
-
     References
     ----------
     Hespanha, "Linear Systems Theory" (2018), Theorem 12.3
@@ -166,20 +163,19 @@ def _is_controllable(
     d = A.shape[0]
     if eigenvalues is None:
         eigenvalues = np.linalg.eigvals(A)
-
     for lam in eigenvalues:
         block = np.hstack([lam * np.eye(d) - A, B])
         if np.linalg.matrix_rank(block, tol=tol) < d:
             return False
-
     return True
 
 
-def define_cost_matrices(d: int, p: int):
+def define_cost_matrices(d: int, p: int, q_diag: float = 1.0, r_diag: float = 1.0):
     """
-    Returns identity cost matrices Q = I_d, R = I_p.
+    Return diagonal cost matrices Q = q_diag * I_d, R = r_diag * I_p.
 
-    Since Q, R are symmetric positive definite, there exists a change
-    of basis under which the cost is given by identity matrices.
+    Since Q, R are symmetric positive definite, there exists a change of
+    basis under which the cost is given by identity matrices; q_diag and
+    r_diag set the relative state-vs-control cost tradeoff.
     """
-    return np.eye(d), np.eye(p)
+    return q_diag * np.eye(d), r_diag * np.eye(p)

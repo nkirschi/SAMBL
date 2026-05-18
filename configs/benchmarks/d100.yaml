@@ -1,0 +1,43 @@
+# d=100 benchmark: very high dimension (s_A=2, s_B=1, total=3)
+name: d100
+
+system:
+  x_dim: 100
+  u_dim: 25
+  s_A: 2
+  s_B: 1
+  a_scale: 0.5
+  b_scale: 0.5
+  coeff_lower: 0.1
+  max_instability: 1.0
+
+simulation:
+  T: 1.0
+  dt: 0.025
+  sigma: 0.5
+  x0_std: 0.0
+
+cost:
+  q_diag: 1.0
+  r_diag: 1.0
+
+training:
+  max_episodes: 200
+  n_seeds: 50
+
+agents:
+  - oracle
+  - dense_greedy
+  - dense_excited
+  - sparse_greedy
+  - sparse_excited
+
+estimation:
+  lambda_lasso: 0.08
+  delta: 0.05
+  mu_ridge: 0.01
+  lasso_max_iter: 5000
+  lasso_tol: 1.0e-4
+
+excitation:
+  sigma_u: 0.15

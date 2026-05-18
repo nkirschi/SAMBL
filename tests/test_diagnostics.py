@@ -104,7 +104,6 @@ class TestRelativeParameterError:
         assert set(err.keys()) == {"joint", "A", "B"}
 
 
-
 class TestSupportMetrics:
     def test_perfect_recovery(self):
         # Two rows, each with 2 nonzeros at known positions
@@ -240,7 +239,6 @@ class TestSupportMetrics:
         assert np.isnan(m["B"]["f1"])
 
 
-
 class TestRestrictedGramMinEigenvalue:
     def test_orthonormal_columns_give_one(self):
         # If Z has columns satisfying Z^T Z / N = I on the support,
@@ -317,7 +315,6 @@ class TestRegressorEnergyBound:
     def test_zero_rows_returns_zero(self):
         Z = np.empty((0, 3))  # zero rows
         assert regressor_energy_bound(Z) == 0.0
-
 
 
 class TestClosedLoopSpectralAbscissa:
@@ -497,7 +494,7 @@ class TestCollectDiagnostics:
         agent = MagicMock()
         agent.A_est = A_est
         agent.B_est = B_est
-        agent.dre = dre_solver if dre_solver else make_mock_dre_solver()
+        agent.planner = dre_solver if dre_solver else make_mock_dre_solver()
         return agent
 
     def test_returns_empty_when_no_estmate(self):

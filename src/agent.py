@@ -1,7 +1,6 @@
 """
 Agents for episodic continuous-time LQ control.
-
-All learning agents use DRE-based feedback (not CARE).
+All learning agents use the Riccati ODE for planning.
 """
 
 import numpy as np
@@ -13,19 +12,10 @@ class Agent:
     """Base class for all agents."""
 
     def __init__(self, config, Q, R):
-        """
-        Parameters
-        ----------
-        config : SystemConfig
-        Q : ndarray (d, d), state cost
-        R : ndarray (p, p), control cost
-        """
         self.config = config
         self.Q = Q
         self.R = R
-        self.dre = RiccatiODESolver(config, Q, R)
-
-        # Current estimated parameters
+        self.planner = RiccatiODESolver(config, Q, R)
         self.A_est = None
         self.B_est = None
 
@@ -35,77 +25,37 @@ class Agent:
         self._dre_valid = False
 
     def get_control(self, t, x):
-        """
-        Return control action u(t) given state x(t).
-
-        Parameters
-        ----------
-        t : float
-            Current time within the episode.
-        x : ndarray, shape (d,)
-            Current state.
-
-        Returns
-        -------
-        u : ndarray, shape (p,)
-        """
         raise NotImplementedError
 
     def update(self, buffer):
-        """
-        Update parameter estimate and recompute DRE gain.
-
-        Parameters
-        ----------
-        buffer : RegressionBuffer
-        """
         raise NotImplementedError
 
     def _solve_dre(self, A, B):
-        """
-        Solve DRE and handle failures gracefully.
-
-        Returns True if solve succeeded, False if fell back to previous.
-        """
+        """Solve DRE. In case of failure fall back to previous solution."""
         try:
-            sol = self.dre.solve(A, B)
-
+            sol = self.planner.solve(A, B)
             if not sol.success:
                 raise RuntimeError(f"DRE solver did not converge: {sol.message}")
-
-            # Success: store as fallback
             self._prev_dre_solution = sol
             self._prev_B_est = B.copy()
             self._dre_valid = True
             return True
-
         except Exception:
-            # Revert to previous gain schedule
             if self._prev_dre_solution is not None:
-                self.dre.solution = self._prev_dre_solution
+                self.planner.solution = self._prev_dre_solution
             self._dre_valid = False
             return False
 
     def _get_feedback(self, t, x):
-        """
-        Compute feedback u = -K(t) x using the current DRE solution.
-
-        Uses the B estimate that was used to solve the DRE (since
-        K(t) = R^{-1} B^T P(t) depends on B).
-        """
         B = self._prev_B_est if not self._dre_valid else self.B_est
         if B is None:
             return np.zeros(self.config.u_dim)
-
-        K = self.dre.get_K(t, B)  # K = -R^{-1} B^T P(t), already negated
-        u = K @ x  # u = -K(t) x (K already has the sign)
-        return u
+        K = self.planner.get_K(t, B)
+        return K @ x
 
 
 class OracleAgent(Agent):
-    """
-    Uses true (A_true, B_true). Solves DRE once at construction.
-    """
+    """Uses true (A_true, B_true); solves DRE once at construction."""
 
     def __init__(self, config, Q, R, A_true, B_true):
         super().__init__(config, Q, R)
@@ -117,19 +67,15 @@ class OracleAgent(Agent):
         return self._get_feedback(t, x)
 
     def update(self, buffer):
-        pass  # Oracle never updates
+        pass
 
 
 class DenseGreedyAgent(Agent):
-    """
-    Ridge regression estimator + DRE feedback. No excitation.
-    """
+    """Ridge regression estimator + DRE feedback. No excitation."""
 
     def __init__(self, config, Q, R, A_init, B_init, mu=0.01):
         super().__init__(config, Q, R)
         self.estimator = DiscreteRidgeEstimator(config.x_dim, config.u_dim, mu=mu)
-
-        # Initialise with prior
         self.A_est = A_init.copy()
         self.B_est = B_init.copy()
         self._solve_dre(A_init, B_init)
@@ -138,16 +84,45 @@ class DenseGreedyAgent(Agent):
         return self._get_feedback(t, x)
 
     def update(self, buffer):
-        A_est, B_est = self.estimator.estimate(buffer)
-        self.A_est = A_est
-        self.B_est = B_est
-        self._solve_dre(A_est, B_est)
+        self.A_est, self.B_est = self.estimator.estimate(buffer)
+        self._solve_dre(self.A_est, self.B_est)
+
+
+class DenseExcitedAgent(Agent):
+    """Ridge regression estimator + DRE feedback + additive excitation."""
+
+    def __init__(
+        self,
+        config,
+        Q,
+        R,
+        A_init,
+        B_init,
+        sigma_u=0.1,
+        excitation_rng=None,
+        mu=0.01,
+    ):
+        super().__init__(config, Q, R)
+        self.estimator = DiscreteRidgeEstimator(config.x_dim, config.u_dim, mu=mu)
+        self.sigma_u = sigma_u
+        self._exc_rng = excitation_rng or np.random.RandomState(0)
+        self.A_est = A_init.copy()
+        self.B_est = B_init.copy()
+        self._solve_dre(A_init, B_init)
+
+    def get_control(self, t, x):
+        return (
+            self._get_feedback(t, x)
+            + self._exc_rng.randn(self.config.u_dim) * self.sigma_u
+        )
+
+    def update(self, buffer):
+        self.A_est, self.B_est = self.estimator.estimate(buffer)
+        self._solve_dre(self.A_est, self.B_est)
 
 
 class SparseGreedyAgent(Agent):
-    """
-    Row-wise Lasso estimator + DRE feedback. No excitation.
-    """
+    """Row-wise Lasso estimator + DRE feedback. No excitation."""
 
     def __init__(
         self,
@@ -161,6 +136,8 @@ class SparseGreedyAgent(Agent):
         c_lambda=2.0,
         delta=0.05,
         max_episodes=None,
+        max_iter=5000,
+        tol=1e-4,
     ):
         super().__init__(config, Q, R)
         self.estimator = RowLassoEstimator(
@@ -171,9 +148,9 @@ class SparseGreedyAgent(Agent):
             c_lambda=c_lambda,
             delta=delta,
             max_episodes=max_episodes,
+            max_iter=max_iter,
+            tol=tol,
         )
-
-        # Initialise with prior
         self.A_est = A_init.copy()
         self.B_est = B_init.copy()
         self._solve_dre(A_init, B_init)
@@ -182,49 +159,12 @@ class SparseGreedyAgent(Agent):
         return self._get_feedback(t, x)
 
     def update(self, buffer):
-        A_est, B_est = self.estimator.estimate(buffer)
-        self.A_est = A_est
-        self.B_est = B_est
-        self._solve_dre(A_est, B_est)
+        self.A_est, self.B_est = self.estimator.estimate(buffer)
+        self._solve_dre(self.A_est, self.B_est)
 
 
-class DenseExcitationAgent(Agent):
-    """
-    Ridge regression estimator + DRE feedback + additive excitation.
-    """
-
-    def __init__(
-        self, config, Q, R, A_init, B_init, sigma_u, excitation_rng=None, mu=0.01
-    ):
-        super().__init__(config, Q, R)
-        self.estimator = DiscreteRidgeEstimator(config.x_dim, config.u_dim, mu=mu)
-        self.sigma_u = sigma_u
-        self._exc_rng = excitation_rng or np.random.RandomState(0)
-
-        # Initialise with prior
-        self.A_est = A_init.copy()
-        self.B_est = B_init.copy()
-        self._solve_dre(A_init, B_init)
-
-    def get_control(self, t, x):
-        u_fb = self._get_feedback(t, x)
-        eta = self._exc_rng.randn(self.config.u_dim) * self.sigma_u
-        return u_fb + eta
-
-    def update(self, buffer):
-        A_est, B_est = self.estimator.estimate(buffer)
-        self.A_est = A_est
-        self.B_est = B_est
-        self._solve_dre(A_est, B_est)
-
-
-class SparseExcitationAgent(Agent):
-    """
-    Row-wise Lasso estimator + DRE feedback + additive excitation.
-
-    The control is u(t) = -K(t) x(t) + eta(t), where
-    eta(t) ~ N(0, sigma_u^2 I_p) is independent excitation noise.
-    """
+class SparseExcitedAgent(Agent):
+    """Row-wise Lasso estimator + DRE feedback + additive excitation."""
 
     def __init__(
         self,
@@ -233,13 +173,15 @@ class SparseExcitationAgent(Agent):
         R,
         A_init,
         B_init,
-        sigma_u,
+        sigma_u=0.1,
         excitation_rng=None,
         lambda_fixed=None,
         sigma_bar=None,
         c_lambda=2.0,
         delta=0.05,
         max_episodes=None,
+        max_iter=5000,
+        tol=1e-4,
     ):
         super().__init__(config, Q, R)
         self.estimator = RowLassoEstimator(
@@ -250,22 +192,21 @@ class SparseExcitationAgent(Agent):
             c_lambda=c_lambda,
             delta=delta,
             max_episodes=max_episodes,
+            max_iter=max_iter,
+            tol=tol,
         )
         self.sigma_u = sigma_u
         self._exc_rng = excitation_rng or np.random.RandomState(0)
-
-        # Initialise with prior
         self.A_est = A_init.copy()
         self.B_est = B_init.copy()
         self._solve_dre(A_init, B_init)
 
     def get_control(self, t, x):
-        u_fb = self._get_feedback(t, x)
-        eta = self._exc_rng.randn(self.config.u_dim) * self.sigma_u
-        return u_fb + eta
+        return (
+            self._get_feedback(t, x)
+            + self._exc_rng.randn(self.config.u_dim) * self.sigma_u
+        )
 
     def update(self, buffer):
-        A_est, B_est = self.estimator.estimate(buffer)
-        self.A_est = A_est
-        self.B_est = B_est
-        self._solve_dre(A_est, B_est)
+        self.A_est, self.B_est = self.estimator.estimate(buffer)
+        self._solve_dre(self.A_est, self.B_est)
