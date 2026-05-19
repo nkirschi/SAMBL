@@ -1,5 +1,6 @@
-import dataclasses
+from __future__ import annotations
 from dataclasses import dataclass
+import dataclasses
 import numpy as np
 
 
@@ -7,178 +8,182 @@ import numpy as np
 class SystemConfig:
     x_dim: int
     u_dim: int
-    T: float
+    s_A: int
+    s_B: int
+    a_scale: float
+    b_scale: float
+    coeff_lower: float
+    max_instability: float
+    sigma: float
     dt: float
+    T: float
 
     @property
-    def H(self):
+    def H(self) -> int:
         """Steps per episode."""
         return int(round(self.T / self.dt))
 
-
-@dataclass(frozen=True)
-class ExperimentConfig:
-    """
-    Full configuration for one experimental benchmark.
-
-    Coefficient distribution for nonzeros in block X:
-        magnitude ~ Uniform(coeff_lower, 2 * x_scale - coeff_lower)
-        sign      ~ Uniform({-1, +1})
-    so that E[|coeff|] = x_scale and the minimum magnitude = coeff_lower.
-    Constraint: x_scale > coeff_lower.
-    """
-
-    # ── Dimensions ──────────────────────────────────────────────────
-    x_dim: int
-    u_dim: int
-
-    # ── Sparsity (per-row, separate A and B blocks) ──────────────────
-    s_A: int  # nonzeros per row in the A block
-    s_B: int  # nonzeros per row in the B block
-
-    # ── Coefficient distribution ─────────────────────────────────────
-    a_scale: float = 0.5  # expected |A_ij| for nonzero entries
-    b_scale: float = 0.5  # expected |B_ij| for nonzero entries
-    coeff_lower: float = 0.1  # minimum nonzero magnitude (signal gap)
-
-    # ── System ───────────────────────────────────────────────────────
-    max_instability: float = 1.0
-
-    # ── Simulation ───────────────────────────────────────────────────
-    T: float = 1.0
-    dt: float = 0.025
-    sigma: float = 0.5
-    x0_std: float = 0.0  # 0.0 = start at origin
-
-    # ── Cost matrices ────────────────────────────────────────────────
-    q_diag: float = 1.0  # Q = q_diag * I_d
-    r_diag: float = 1.0  # R = r_diag * I_p
-
-    # ── Episodes and seeds ───────────────────────────────────────────
-    max_episodes: int = 100
-    n_seeds: int = 50
-
-    # ── Agents to run ────────────────────────────────────────────────
-    agents: tuple = (
-        "oracle",
-        "dense_greedy",
-        "dense_excited",
-        "sparse_greedy",
-        "sparse_excited",
-    )
-
-    # ── Estimation ───────────────────────────────────────────────────
-    lambda_lasso: float = None
-    c_lambda: float = 2.0
-    delta: float = 0.05
-    mu_ridge: float = 0.01
-    lasso_max_iter: int = 5000
-    lasso_tol: float = 1e-4
-
-    # ── Excitation ───────────────────────────────────────────────────
-    sigma_u: float = 0.1
-
-    # ── Diagnostics ──────────────────────────────────────────────────
-    basin_thresholds: tuple = (0.05, 0.10, 0.15, 0.20, 0.30)
-    support_threshold: float = 0.05
-
-    def __post_init__(self):
-        if isinstance(self.agents, list):
-            object.__setattr__(self, "agents", tuple(self.agents))
-        if isinstance(self.basin_thresholds, list):
-            object.__setattr__(self, "basin_thresholds", tuple(self.basin_thresholds))
-
     @property
-    def H(self):
-        return int(round(self.T / self.dt))
-
-    @property
-    def sparsity(self):
-        """Total nonzeros per row = s_A + s_B."""
+    def sparsity(self) -> int:
+        """Total nonzeros per row = a_nonzeros + b_nonzeros."""
         return self.s_A + self.s_B
 
     @property
     def sigma_bar(self):
         return self.sigma / np.sqrt(self.dt)
 
-    @property
-    def system_config(self):
-        return SystemConfig(x_dim=self.x_dim, u_dim=self.u_dim, T=self.T, dt=self.dt)
+
+@dataclass(frozen=True)
+class CostConfig:
+    q_scale: float
+    r_scale: float
+
+
+@dataclass(frozen=True)
+class EstimatorConfig:
+    mu_ridge: float
+    lambda_lasso: float | None
+    c_lambda: float
+    delta: float
+    lasso_max_iter: int
+    lasso_tol: float
+
+
+@dataclass(frozen=True)
+class ExcitationConfig:
+    sigma_u: float
+
+
+@dataclass(frozen=True)
+class ExperimentConfig:
+    """Full configuration for one experimental benchmark."""
+
+    max_episodes: int
+    n_seeds: int
+    agents: tuple[str, ...]
+    x0_std: float
+    action_clip: float
+    state_clip: float
+    support_threshold: float
+    system: SystemConfig
+    cost: CostConfig
+    estimators: EstimatorConfig
+    excitation: ExcitationConfig
 
     @property
-    def theoretical_speedup(self):
-        dp = self.x_dim + self.u_dim
-        return dp / (self.sparsity * np.log(dp))
+    def m_explore(self) -> int:
+        """Required episodes for pure exploration phase."""
+        return int(np.ceil(2 * (self.system.x_dim + self.system.u_dim) / self.system.H))
 
     @property
-    def theoretical_lambda_schedule(self):
-        H = self.H
+    def theoretical_speedup(self) -> float:
+        d_plus_p = self.system.x_dim + self.system.u_dim
+        return d_plus_p / (self.system.sparsity * np.log(d_plus_p))
 
-        def get_lambda(N):
-            d, p, M = self.x_dim, self.u_dim, self.max_episodes
-            log_term = np.log((d + p) * M * d / self.delta)
-            return self.c_lambda * self.sigma_bar * np.sqrt(log_term / N)
-
-        return [float(get_lambda(m * H)) for m in range(1, self.max_episodes + 1)]
+    def theoretical_lambda(self, N):
+        d, p, M = self.system.x_dim, self.system.u_dim, self.max_episodes
+        log_term = np.log((d + p) * M * d / self.estimators.delta)
+        return self.estimators.c_lambda * self.system.sigma_bar * np.sqrt(log_term / N)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":
-        """Load an ExperimentConfig from a YAML benchmark file."""
         import yaml
 
         with open(path) as f:
             raw = yaml.safe_load(f)
-        return cls._from_dict(raw)
 
-    @classmethod
-    def _from_dict(cls, raw: dict) -> "ExperimentConfig":
-        sys_ = raw.get("system", {})
+        sys = raw.get("system", {})
         sim = raw.get("simulation", {})
         cost = raw.get("cost", {})
-        train = raw.get("training", {})
         est = raw.get("estimation", {})
         exc = raw.get("excitation", {})
-        agents = raw.get("agents", None)
-        return cls(
-            x_dim=sys_["x_dim"],
-            u_dim=sys_["u_dim"],
-            s_A=sys_["s_A"],
-            s_B=sys_["s_B"],
-            a_scale=sys_.get("a_scale", 0.5),
-            b_scale=sys_.get("b_scale", 0.5),
-            coeff_lower=sys_.get("coeff_lower", 0.1),
-            max_instability=sys_.get("max_instability", 1.0),
-            T=sim.get("T", 1.0),
-            dt=sim.get("dt", 0.025),
+        train = raw.get("training", {})
+
+        system_cfg = SystemConfig(
+            x_dim=sys["x_dim"],
+            u_dim=sys["u_dim"],
+            s_A=sys["s_A"],
+            s_B=sys["s_B"],
+            a_scale=sys.get("a_scale", 0.5),
+            b_scale=sys.get("b_scale", 0.5),
+            coeff_lower=sys.get("coeff_lower", 0.1),
+            max_instability=sys.get("max_instability", 1.0),
             sigma=sim.get("sigma", 0.5),
-            x0_std=sim.get("x0_std", 0.0),
-            q_diag=cost.get("q_diag", 1.0),
-            r_diag=cost.get("r_diag", 1.0),
-            max_episodes=train.get("max_episodes", 100),
-            n_seeds=train.get("n_seeds", 50),
-            agents=tuple(agents)
-            if agents is not None
-            else (
+            dt=sim.get("dt", 0.025),
+            T=sim.get("T", 1.0),
+        )
+
+        cost_cfg = CostConfig(
+            q_scale=cost.get("q_scale", 1.0), r_scale=cost.get("r_scale", 1.0)
+        )
+
+        est_cfg = EstimatorConfig(
+            mu_ridge=est.get("mu_ridge", 0.01),
+            lambda_lasso=est.get("lambda_lasso", None),
+            c_lambda=est.get("c_lambda", 2.0),
+            delta=est.get("delta", 0.05),
+            lasso_max_iter=est.get("lasso_max_iter", 5000),
+            lasso_tol=float(est.get("lasso_tol", 1e-4)),
+        )
+
+        exc_cfg = ExcitationConfig(sigma_u=exc.get("sigma_u", 0.1))
+
+        agents = raw.get(
+            "agents",
+            (
                 "oracle",
                 "dense_greedy",
                 "dense_excited",
                 "sparse_greedy",
                 "sparse_excited",
             ),
-            lambda_lasso=est.get("lambda_lasso", None),
-            c_lambda=est.get("c_lambda", 2.0),
-            delta=est.get("delta", 0.05),
-            mu_ridge=est.get("mu_ridge", 0.01),
-            lasso_max_iter=est.get("lasso_max_iter", 5000),
-            lasso_tol=float(est.get("lasso_tol", 1e-4)),
-            sigma_u=exc.get("sigma_u", 0.1),
+        )
+
+        return cls(
+            max_episodes=train.get("max_episodes", 100),
+            n_seeds=train.get("n_seeds", 50),
+            agents=tuple(agents),
+            x0_std=sim.get("x0_std", 0.0),
+            action_clip=sim.get("action_clip", 10.0),
+            state_clip=sim.get("state_clip", 100.0),
+            support_threshold=est.get("support_threshold", 0.05),
+            system=system_cfg,
+            cost=cost_cfg,
+            estimators=est_cfg,
+            excitation=exc_cfg,
         )
 
     @classmethod
     def apply_overrides(
         cls, base: "ExperimentConfig", overrides: dict
     ) -> "ExperimentConfig":
-        """Return a new ExperimentConfig with override fields applied."""
+        sub_configs = {
+            "system":     base.system,
+            "cost":       base.cost,
+            "estimators": base.estimators,
+            "excitation": base.excitation,
+        }
+        sub_overrides = {name: {} for name in sub_configs}
+        top_overrides = {}
+
+        for key, val in overrides.items():
+            for sub_name, sub_cfg in sub_configs.items():
+                if key in {f.name for f in dataclasses.fields(sub_cfg)}:
+                    sub_overrides[sub_name][key] = val
+                    break
+            else:
+                top_overrides[key] = val
+
+        new_sub = {}
+        for sub_name, sub_cfg in sub_configs.items():
+            if sub_overrides[sub_name]:
+                fields = {f.name: getattr(sub_cfg, f.name) for f in dataclasses.fields(sub_cfg)}
+                fields.update(sub_overrides[sub_name])
+                new_sub[sub_name] = type(sub_cfg)(**fields)
+            else:
+                new_sub[sub_name] = sub_cfg
+
         kwargs = {f.name: getattr(base, f.name) for f in dataclasses.fields(base)}
-        kwargs.update(overrides)
+        kwargs.update(new_sub)
+        kwargs.update(top_overrides)
         return cls(**kwargs)

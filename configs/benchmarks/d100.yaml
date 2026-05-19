@@ -18,8 +18,8 @@ simulation:
   x0_std: 0.0
 
 cost:
-  q_diag: 1.0
-  r_diag: 1.0
+  q_scale: 1.0
+  r_scale: 1.0
 
 training:
   max_episodes: 200

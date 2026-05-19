@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import numpy as np
+from numpy.typing import NDArray
 from scipy.integrate import solve_ivp
 from scipy.linalg import cho_factor, cho_solve
-
+from common import SystemConfig
 
 class RiccatiODESolver:
     """
@@ -9,66 +12,52 @@ class RiccatiODESolver:
     Not to be confused with the Riccati algebraic equation.
     See Basei et al. 2022 equation (2.10)
     """
-
-    def __init__(self, config, Q, R):
-        self.config = config
+    def __init__(self, sys_cfg: SystemConfig, Q: NDArray[np.float64], R: NDArray[np.float64]):
+        self.sys_cfg = sys_cfg
         self.Q = Q
         self.R = R
-        self.R_cho = cho_factor(R)  # R is assumed to be positive definite
+        self.R_cho = cho_factor(R)
         self.solution = None
 
-    def solve(self, A, B, terminal_cost=None):
-        """
-        Solves for P(t) over [0, T] given estimates A_hat, B_hat.
-        """
-        # Since R is assumed psd, we use Cholesky here
-        # R_inv_B_T = solve(self.R, B.T, assume_a="pos")
+    def solve(self, A: NDArray[np.float64], B: NDArray[np.float64], terminal_cost: NDArray[np.float64] | None = None) -> bool:
         R_inv_B_T = cho_solve(self.R_cho, B.T)
         S = B @ R_inv_B_T
 
-        # We solve BACKWARDS from T to 0.
-        # Let tau = T - t. dP/dtau = -dP/dt.
-        # dP/dtau = A'P + PA - P B R^-1 B' P + Q
         def riccati_ode(_, p_flat):
-            P = p_flat.reshape(self.config.x_dim, self.config.x_dim)
+            P = p_flat.reshape(self.sys_cfg.x_dim, self.sys_cfg.x_dim)
             dP_dtau = A.T @ P + P @ A - P @ S @ P + self.Q
             return dP_dtau.flatten()
 
-        p_final = (
-            terminal_cost.flatten()  # optional quadratic terminal cost (generalisation)
-            if terminal_cost is not None
-            else np.zeros(self.config.x_dim**2)
-        )
+        if terminal_cost is not None:
+            p_final = terminal_cost.flatten()
+        else:
+            p_final = np.zeros(self.sys_cfg.x_dim**2)
 
         sol = solve_ivp(
             riccati_ode,
-            t_span=[0, self.config.T],  # Integrate from tau=0 (t=T) to tau=T (t=0)
+            t_span=[0, self.sys_cfg.T],
             y0=p_final,
             dense_output=True,
             method="Radau",
-            rtol=1e-6,  # High precision relative tolerance
-            atol=1e-9,  # High precision absolute tolerance
+            rtol=1e-6,
+            atol=1e-9,
         )
 
-        self.solution = sol
-        return sol
+        if sol.success:
+            self.solution = sol
+            return True
+        return False
 
-    def get_K(self, t, B):
+    def get_K(self, t: float, B: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Returns feedback matrix K(t) = -R^-1 B^T P(t).
         P(t) is retrieved via the dense interpolant.
         """
-        assert 0 <= t <= self.config.T
-
         if self.solution is None:
-            return np.zeros((self.config.u_dim, self.config.x_dim))
+            return np.zeros((self.sys_cfg.u_dim, self.sys_cfg.x_dim), dtype=np.float64)
 
-        tau = self.config.T - t  # map physics time t -> solver time tau
+        tau = self.sys_cfg.T - t  # map physics time t -> solver time tau
         P_flat = self.solution.sol(tau)
-        P = P_flat.reshape(self.config.x_dim, self.config.x_dim)
-
-        # K = -R^-1 B^T P
-        # K = solve(self.R, -B.T @ P, assume_a="pos")
+        P = P_flat.reshape(self.sys_cfg.x_dim, self.sys_cfg.x_dim)
         K = cho_solve(self.R_cho, -B.T @ P)
-
         return K

@@ -15,6 +15,8 @@ Rejection sampling on three criteria:
     (iii) Stabilisability via the Hautus lemma.
 """
 
+from __future__ import annotations
+
 import numpy as np
 from typing import Set, Tuple, List
 from numpy.typing import NDArray
@@ -26,51 +28,20 @@ def sample_sparse_system(
     s_A: int,
     s_B: int,
     seed: int,
-    a_scale: float = 0.5,
-    b_scale: float = 0.5,
-    coeff_lower: float = 0.1,
-    max_instability: float = 1.0,
+    a_scale: float,
+    b_scale: float,
+    coeff_lower: float,
+    max_instability: float,
     max_attempts: int = 100,
 ) -> Tuple[NDArray[np.float64], NDArray[np.float64], List[Set[int]], int]:
     """
     Sample a sparse, stabilisable LQ system.
-
-    Parameters
-    ----------
-    d : int
-        State dimension.
-    p : int
-        Control dimension.
-    s_A : int
-        Exact nonzeros per row in the A block. Must satisfy 0 < s_A <= d.
-    s_B : int
-        Exact nonzeros per row in the B block. Must satisfy 0 < s_B <= p.
-    seed : int
-        Random seed.
-    a_scale : float
-        Expected absolute value of nonzero A entries (> coeff_lower).
-    b_scale : float
-        Expected absolute value of nonzero B entries (> coeff_lower).
-    coeff_lower : float
-        Minimum nonzero magnitude; defines the Lasso signal gap.
-    max_instability : float
-        Maximum allowed Re(lambda(A)); limits state blowup during exploration.
-    max_attempts : int
-        Rejection-sampling budget.
-
-    Returns
-    -------
-    A_star, B_star, supports, n_attempts
-        supports[i] is the set of global column indices (in [0, d+p)) for
-        row i of [A | B].
     """
-    assert 0 < s_A <= d, f"s_A={s_A} must be in (0, d={d}]"
-    assert 0 < s_B <= p, f"s_B={s_B} must be in (0, p={p}]"
-    assert a_scale > coeff_lower > 0, (
-        f"Need 0 < coeff_lower={coeff_lower} < a_scale={a_scale}"
-    )
-    assert b_scale > coeff_lower, f"Need coeff_lower={coeff_lower} < b_scale={b_scale}"
 
+    assert 0 < s_A <= d
+    assert 0 < s_B <= p
+    assert a_scale > coeff_lower > 0
+    assert b_scale > coeff_lower > 0
     a_upper = 2.0 * a_scale - coeff_lower
     b_upper = 2.0 * b_scale - coeff_lower
 
@@ -82,9 +53,7 @@ def sample_sparse_system(
         supports = []
 
         for i in range(d):
-            # A block: choose columns from [0, d)
             a_cols = rng.choice(d, size=s_A, replace=False)
-            # B block: choose columns from [0, p)
             b_cols = rng.choice(p, size=s_B, replace=False)
 
             for j in a_cols:
@@ -92,7 +61,6 @@ def sample_sparse_system(
             for j in b_cols:
                 B[i, j] = rng.choice([-1, 1]) * rng.uniform(coeff_lower, b_upper)
 
-            # Global column indices for [A | B]: A in [0, d), B in [d, d+p)
             supports.append({int(j) for j in a_cols} | {int(j + d) for j in b_cols})
 
         # (i) No inactive control direction
@@ -111,9 +79,8 @@ def sample_sparse_system(
         return A, B, supports, attempt
 
     raise RuntimeError(
-        f"Failed to sample a valid system after {max_attempts} attempts "
-        f"(d={d}, p={p}, s_A={s_A}, s_B={s_B}, "
-        f"seed={seed}). Consider increasing max_instability or max_attempts."
+        f"Failed to sample a valid system after {max_attempts} attempts."
+        f"Consider increasing max_instability or max_attempts."
     )
 
 
@@ -168,14 +135,3 @@ def _is_controllable(
         if np.linalg.matrix_rank(block, tol=tol) < d:
             return False
     return True
-
-
-def define_cost_matrices(d: int, p: int, q_diag: float = 1.0, r_diag: float = 1.0):
-    """
-    Return diagonal cost matrices Q = q_diag * I_d, R = r_diag * I_p.
-
-    Since Q, R are symmetric positive definite, there exists a change of
-    basis under which the cost is given by identity matrices; q_diag and
-    r_diag set the relative state-vs-control cost tradeoff.
-    """
-    return q_diag * np.eye(d), r_diag * np.eye(p)
