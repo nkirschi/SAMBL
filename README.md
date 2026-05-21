@@ -1,21 +1,40 @@
 # Sample-Efficient Continuous-Time Reinforcement Learning
 
-A newly born repo
-
 ## Directory Structure
 
 ```
 .
+├── configs
+│   ├── benchmarks
+│   │   ├── d100.yaml
+│   │   ├── debug.yaml
+│   │   └── ...
+│   └── sweeps
+│       ├── sparsity.yaml
+│       └── ...
 ├── notebooks
-│   └── regret.ipynb
+├── results
+│   ├── benchmarks
+│   │   ├── d100
+│   │   ├── debug
+│   │   └── ...
+│   └── sweeps
+│       ├── sparsity
+│       └── ...
+├── slurm
+│   ├── stderr
+│   └── stdout
 ├── src
-│   ├── algorithm.py
-│   ├── common.py
-│   ├── dynamics.py
-│   ├── estimator.py
-│   └── planner.py
 └── tests
-    ├── test_dynamics.py
-    ├── test_estimator.py
-    └── test_planner.py
+```
+
+## Running Experiments (Slurm)
+
+benchmarks:
+```
+sbatch --cpus-per-task=${NUM_CPUS} job.slurm benchmark ${NAME}
+```
+sweeps:
+```
+sbatch --cpus-per-task=${NUM_CPUS} job.slurm sweep ${NAME}
 ```

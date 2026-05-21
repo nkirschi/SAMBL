@@ -239,6 +239,7 @@ def run_paired_experiment(
                         "support_f1_joint": sup["joint"]["f1"],
                         "support_f1_A": sup["A"]["f1"],
                         "support_f1_B": sup["B"]["f1"],
+                        "episode_cost": cost,
                         "gram_min_eig": restricted_gram_min_eigenvalue(
                             buffers[name].Z, supports
                         ),
@@ -259,14 +260,30 @@ def run_paired_experiment(
 
 
 def run_benchmark(
-    exp_config: ExperimentConfig, seeds=None, verbose: bool = False
+    exp_config: ExperimentConfig,
+    seeds=None,
+    verbose: bool = False,
+    n_workers: int = 1,
 ) -> List[SeedResult]:
-    """Run a full benchmark across multiple seeds."""
+    """
+    Run a full benchmark across multiple seeds.
+    """
     if seeds is None:
         seeds = list(range(exp_config.n_seeds))
-    results = []
-    for i, seed in enumerate(seeds):
-        if verbose:
-            print(f"Seed {i + 1}/{len(seeds)} (seed={seed})")
-        results.append(run_paired_experiment(exp_config, seed, verbose=verbose))
+
+    if n_workers <= 1:
+        results = []
+        for i, seed in enumerate(seeds):
+            if verbose:
+                print(f"Seed {i + 1}/{len(seeds)} (seed={seed})")
+            results.append(run_paired_experiment(exp_config, seed, verbose=verbose))
+        return results
+
+    from concurrent.futures import ProcessPoolExecutor
+    from functools import partial
+
+    print(f"Running {len(seeds)} seeds across {n_workers} workers")
+    worker_fn = partial(run_paired_experiment, exp_config, verbose=False)
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        results = list(pool.map(worker_fn, seeds))
     return results

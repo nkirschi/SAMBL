@@ -35,7 +35,8 @@ class RegressionBuffer:
         H = zs.shape[0]
         start = self._N
         end = start + H
-        assert end <= self.capacity, "Buffer overflow. Increase max_episodes."
+        if end > self.capacity:
+            raise RuntimeError("Buffer overflow. Increase max_episodes.")
         self._Z[start:end] = zs
         self._Y[start:end] = ys
         self._N = end

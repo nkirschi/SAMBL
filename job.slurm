@@ -1,18 +1,27 @@
 #!/bin/sh
-
+#
 #SBATCH -J sectrl
-#SBATCH --output=slurm/logs/sectrl.%j
-#SBATCH --error=slurm/errors/sectrl.%j
+#SBATCH --output=/dss/dsshome1/07/go69lir/SECTRL/slurm/stdout/sectrl.%j.out
+#SBATCH --error=/dss/dsshome1/07/go69lir/SECTRL/slurm/stderr/sectrl.%j.err
 #
 #SBATCH --partition=lrz-cpu
 #SBATCH --qos=cpu
-#SBATCH --time 0-00:10:00
-#SBATCH --mem=32GB
-#SBATCH --cpus-per-task=1
+#SBATCH --time=0-00:30:00
+#SBATCH --mem=16GB
+#SBATCH --cpus-per-task=20
 
+# Prevent each worker from spawning its own BLAS thread pool
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
 
-SCRIPT="/dss/dsshome1/07/go69lir/SECTRL/src/main.py --benchmark d8"
-CODE_DIR="/dss/dsshome1/07/go69lir/SECTRL"
+MODE="$1 $2"  # e.g., 'benchmark d10' or 'sweep sparsity'
+PYTHON="/dss/dsshome1/07/go69lir/SECTRL/.venv/bin/python"
+N_WORKERS=${SLURM_CPUS_PER_TASK}
 
-srun --cpu-bind=verbose,socket \
-     bash -c "cd ${CODE_DIR} && source .venv/bin/activate && python -u ${SCRIPT}"
+echo "Running ${MODE} with ${N_WORKERS} workers"
+
+srun --cpu-bind=cores,verbose \
+    ${PYTHON} -u src/main.py \
+        --${MODE} \
+        --n-workers ${N_WORKERS}

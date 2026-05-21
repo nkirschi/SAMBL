@@ -264,13 +264,8 @@ def print_summary(table):
 def plot_trajectories(results, exp_config: ExperimentConfig, save_path=None):
     import matplotlib.pyplot as plt
 
-    LEARNING_AGENTS = [
-        "dense_greedy",
-        "dense_excited",
-        "sparse_greedy",
-        "sparse_excited",
-    ]
-    ALL_AGENTS = ["oracle"] + LEARNING_AGENTS
+    ALL_AGENTS = list(exp_config.agents)
+    LEARNING_AGENTS = [a for a in ALL_AGENTS if a != "oracle"]
     COLORS = {
         "oracle": "green",
         "dense_greedy": "blue",
