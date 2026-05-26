@@ -1,6 +1,5 @@
 # Vary episode horizon T; base system is d10
 base: d10
-name_prefix: horizon
 vary:
   - {T: 0.5}
   - {T: 1.0}

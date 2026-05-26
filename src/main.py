@@ -72,7 +72,6 @@ def load_sweep(name: str) -> dict:
 
     Sweep YAML schema:
         base:         <benchmark name>       # base config to load
-        name_prefix:  <str>                  # prefix for generated names
         vary:
           - {field1: val1, field2: val2}     # each dict = one override set
           - ...
@@ -82,7 +81,7 @@ def load_sweep(name: str) -> dict:
         spec = yaml.safe_load(f)
 
     base = load_benchmark(spec["base"])
-    prefix = spec["name_prefix"]
+    prefix = spec["base"]
     configs = {}
 
     for override in spec["vary"]:

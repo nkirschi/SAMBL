@@ -1,6 +1,5 @@
 # Vary control dimension; s_B scales to stay within bounds
 base: d10
-name_prefix: cost
 vary:
   - {r_scale: 1.0}
   - {r_scale: 0.5}

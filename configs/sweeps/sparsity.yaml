@@ -1,6 +1,5 @@
 # Vary total sparsity by adjusting A and B nonzeros per row; base system is d50
 base: d50
-name_prefix: sparsity
 vary:
   - {s_A: 1, s_B: 1}   # s=2
   - {s_A: 2, s_B: 1}   # s=3
