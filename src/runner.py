@@ -257,33 +257,3 @@ def run_paired_experiment(
             )
 
     return result
-
-
-def run_benchmark(
-    exp_config: ExperimentConfig,
-    seeds=None,
-    verbose: bool = False,
-    n_workers: int = 1,
-) -> List[SeedResult]:
-    """
-    Run a full benchmark across multiple seeds.
-    """
-    if seeds is None:
-        seeds = list(range(exp_config.n_seeds))
-
-    if n_workers <= 1:
-        results = []
-        for i, seed in enumerate(seeds):
-            if verbose:
-                print(f"Seed {i + 1}/{len(seeds)} (seed={seed})")
-            results.append(run_paired_experiment(exp_config, seed, verbose=verbose))
-        return results
-
-    from concurrent.futures import ProcessPoolExecutor
-    from functools import partial
-
-    print(f"Running {len(seeds)} seeds across {n_workers} workers")
-    worker_fn = partial(run_paired_experiment, exp_config, verbose=False)
-    with ProcessPoolExecutor(max_workers=n_workers) as pool:
-        results = list(pool.map(worker_fn, seeds))
-    return results

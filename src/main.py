@@ -11,19 +11,27 @@ Usage:
     python main.py --debug                # quick debugging run
 """
 
+import os
+import sys
+
+# Avoid multithreading in numpy for cleaner parallelism
+if any(a.startswith("--n-workers=") or a == "--n-workers" for a in sys.argv[1:]):
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
 import argparse
 import dataclasses
 from dataclasses import is_dataclass
 import json
-import os
 import time
 import glob
+from collections import defaultdict
 
-import numpy as np
 import yaml
 
 from common import ExperimentConfig
-from runner import run_benchmark, run_paired_experiment
+from runner import run_paired_experiment
 from analysis import (
     all_pairwise_tests,
     final_summary_table,
@@ -85,60 +93,107 @@ def load_sweep(name: str) -> dict:
     return configs
 
 
+# Execution
+
+
+def _print_config(name: str, exp_config: ExperimentConfig) -> None:
+    """Print benchmark configuration before execution starts."""
+    print(f"\n{'=' * 60}")
+    print(f"Benchmark: {name}")
+    print(
+        f"  d={exp_config.system.x_dim}, p={exp_config.system.u_dim}, "
+        f"s={exp_config.system.sparsity}="
+        f"{exp_config.system.s_A}+{exp_config.system.s_B}=s_A+s_B"
+    )
+    print(
+        f"  M={exp_config.max_episodes}, H={exp_config.system.H}, "
+        f"seeds={exp_config.n_seeds}, m_explore={exp_config.m_explore}"
+    )
+    print(f"  agents: {list(exp_config.agents)}")
+    print(f"  Theoretical speedup: {exp_config.theoretical_speedup:.2f}")
+    print(f"{'=' * 60}")
+
+
+def _run_sequential(exp_config: ExperimentConfig, verbose: bool = False) -> list:
+    """Run all seeds for one config sequentially."""
+    seeds = list(range(exp_config.n_seeds))
+    results = []
+    for i, seed in enumerate(seeds):
+        if verbose:
+            print(f"Seed {i + 1}/{len(seeds)} (seed={seed})")
+        results.append(run_paired_experiment(exp_config, seed))
+    return results
+
+
+def _run_parallel(
+    tasks: list[tuple[str, ExperimentConfig, int]],
+    n_workers: int,
+) -> dict[str, list]:
+    """
+    Run a list of (name, config, seed) tasks across a worker pool.
+
+    Returns {name: [SeedResult, ...]} with each list sorted by seed.
+    Individual failures are caught and reported; a summary error is raised
+    after all futures settle so one bad seed does not discard others.
+    """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    grouped = defaultdict(list)
+    errors = []
+
+    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+        futures = {
+            pool.submit(run_paired_experiment, cfg, seed): (name, seed)
+            for name, cfg, seed in tasks
+        }
+        for future in as_completed(futures):
+            name, seed = futures[future]
+            try:
+                grouped[name].append(future.result())
+            except Exception as exc:
+                errors.append((name, seed, exc))
+                print(f"Error: seed {seed} of '{name}' failed: {exc}")
+
+    if errors:
+        summary = ", ".join(f"{name}[{seed}]" for name, seed, _ in errors)
+        raise RuntimeError(f"{len(errors)} task(s) failed: {summary}")
+
+    return {
+        name: sorted(results, key=lambda r: r.seed) for name, results in grouped.items()
+    }
+
+
 # Reporting
 
 
-def run_and_report(
+def report(
     name: str,
     exp_config: ExperimentConfig,
+    results: list,
     output_dir: str,
-    n_workers: int = 1,
+    elapsed: float | None = None,
     verbose: bool = True,
-    results=None,
-):
-    """Run one benchmark and save all outputs."""
-
-    if verbose:
-        print(f"\n{'=' * 60}")
-        print(f"Benchmark: {name}")
-        print(
-            f"  d={exp_config.system.x_dim}, p={exp_config.system.u_dim}, s={exp_config.system.sparsity}={exp_config.system.s_A}+{exp_config.system.s_B}=s_A+s_B"
-        )
-        print(
-            f"  M={exp_config.max_episodes}, H={exp_config.system.H}, seeds={exp_config.n_seeds}, m_explore={exp_config.m_explore}"
-        )
-        print(f"  agents: {list(exp_config.agents)}")
-        print(f"  Theoretical speedup: {exp_config.theoretical_speedup:.2f}")
-        print(
-            "  Lambda schedule (first 5): "
-            + ", ".join(
-                f"{exp_config.theoretical_lambda(m * exp_config.system.H):.4f}"
-                for m in range(1, 6)
-            )
-        )
-        print(f"{'=' * 60}")
-        print(exp_config)
-        print(f"{'=' * 60}")
-
-    elapsed = None
-    if results is None:  # TODO: this is quite hacky. refactor to separate out reporting from running
-        t0 = time.time()
-        results = run_benchmark(exp_config, verbose=verbose, n_workers=n_workers)
-        elapsed = time.time() - t0
-        print(f"Completed in {elapsed:.1f}s")
+) -> None:
+    """
+    Pure reporting: analysis, JSON serialisation, and plots.
+    Does not run any simulation.
+    """
+    import numpy as np
 
     table = final_summary_table(results, agent_names=exp_config.agents)
     tests = all_pairwise_tests(results)
+    _, median = basin_entry_ratio(results, threshold=exp_config.support_threshold)
 
     if verbose:
+        print(f"Completed in {elapsed:.1f}s" if elapsed is not None else "")
         print("\nFinal-episode summary:")
         print_summary(table)
-
         print("\nPaired tests:")
         for label, test_dict in tests.items():
             sign = test_dict["sign_test"]
             print(
-                f"  {label}: wins={sign['wins_b']}/{sign['n']}, p={sign['p_value']:.4f} (sign test)"
+                f"  {label}: wins={sign['wins_b']}/{sign['n']}, "
+                f"p={sign['p_value']:.4f} (sign test)"
             )
         learning = [n for n in exp_config.agents if n != "oracle"]
         if "dense_greedy" in exp_config.agents:
@@ -146,9 +201,6 @@ def run_and_report(
                 w = seed_wins(results, "dense_greedy", sp)
                 print(f"  Seed wins ({sp} < dense_greedy): {w}/{len(results)}")
 
-    ratios, median = basin_entry_ratio(results, threshold=exp_config.support_threshold)
-
-    # Save outputs
     bench_dir = os.path.join(output_dir, name, time.strftime("%Y%m%d_%H%M%S"))
     os.makedirs(bench_dir, exist_ok=True)
 
@@ -197,7 +249,6 @@ def run_and_report(
     plot_error_evolution(results, exp_config, output_dir=param_dir)
 
     print(f"Results saved to {bench_dir}/")
-    return results
 
 
 # Entry point
@@ -241,58 +292,54 @@ def main():
         os.makedirs(d, exist_ok=True)
 
     if args.debug:
-        run_and_report("debug", load_benchmark("debug"), bench_dir, n_workers=1)
+        cfg = load_benchmark("debug")
+        _print_config("debug", cfg)
+        t0 = time.time()
+        results = _run_sequential(cfg, verbose=True)
+        report("debug", cfg, results, bench_dir, elapsed=time.time() - t0)
 
     elif args.benchmark:
-        run_and_report(
-            args.benchmark,
-            load_benchmark(args.benchmark),
-            bench_dir,
-            n_workers=args.n_workers,
-        )
+        cfg = load_benchmark(args.benchmark)
+        _print_config(args.benchmark, cfg)
+        tasks = [(args.benchmark, cfg, seed) for seed in range(cfg.n_seeds)]
+        t0 = time.time()
+        if args.n_workers <= 1:
+            results = _run_sequential(cfg, verbose=True)
+        else:
+            results = _run_parallel(tasks, args.n_workers)[args.benchmark]
+        report(args.benchmark, cfg, results, bench_dir, elapsed=time.time() - t0)
 
     elif args.sweep:
         configs = load_sweep(args.sweep)
+        tasks = [
+            (name, cfg, seed)
+            for name, cfg in configs.items()
+            for seed in range(cfg.n_seeds)
+        ]
+        t0 = time.time()
         if args.n_workers <= 1:
-            for name, cfg in configs.items():
-                run_and_report(name, cfg, sweep_dir, n_workers=1, verbose=False)
+            grouped = {name: _run_sequential(cfg) for name, cfg in configs.items()}
         else:
-            from concurrent.futures import ProcessPoolExecutor, as_completed
-
-            # Flatten to (config, seed) pairs so the pool fills workers
-            # continuously rather than waiting for the slowest config.
-            tasks = [
-                (name, cfg, seed)
-                for name, cfg in configs.items()
-                for seed in range(cfg.n_seeds)
-            ]
             print(f"Running {len(tasks)} tasks across {args.n_workers} workers")
-
-            t0 = time.time()
-            grouped = {name: [] for name in configs}
-            with ProcessPoolExecutor(max_workers=args.n_workers) as pool:
-                futures = {
-                    pool.submit(run_paired_experiment, cfg, seed): (name, cfg)
-                    for name, cfg, seed in tasks
-                }
-                for future in as_completed(futures):
-                    name, cfg = futures[future]
-                    grouped[name].append(future.result())
-            
-            elapsed = time.time() - t0
-            print(f"Completed in {elapsed:.1f}s")
-
-            for name, cfg in configs.items():
-                results = sorted(grouped[name], key=lambda r: r.seed)
-                run_and_report(
-                    name, cfg, sweep_dir,
-                    results=results, verbose=False,
-                )
+            grouped = _run_parallel(tasks, args.n_workers)
+        elapsed = time.time() - t0
+        print(f"Completed in {elapsed:.1f}s")
+        t0 = time.time()
+        for name, cfg in configs.items():
+            report(name, cfg, grouped[name], sweep_dir, verbose=False)
+        print(f"Completed in {time.time() - t0:.1f}s")
 
     else:
         configs = {k: v for k, v in load_all_benchmarks().items() if k != "debug"}
         for name, cfg in configs.items():
-            run_and_report(name, cfg, bench_dir, n_workers=args.n_workers)
+            _print_config(name, cfg)
+            tasks = [(name, cfg, seed) for seed in range(cfg.n_seeds)]
+            t0 = time.time()
+            if args.n_workers <= 1:
+                results = _run_sequential(cfg, verbose=True)
+            else:
+                results = _run_parallel(tasks, args.n_workers)[name]
+            report(name, cfg, results, bench_dir, elapsed=time.time() - t0)
 
 
 if __name__ == "__main__":
