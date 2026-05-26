@@ -15,7 +15,7 @@ import os
 import sys
 
 # Avoid multithreading in numpy for cleaner parallelism
-if any(a.startswith("--n-workers=") or a == "--n-workers" for a in sys.argv[1:]):
+if any(a.startswith("--n-workers") for a in sys.argv[1:]):
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     os.environ.setdefault("MKL_NUM_THREADS", "1")
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
