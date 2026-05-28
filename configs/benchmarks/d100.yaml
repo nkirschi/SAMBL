@@ -36,9 +36,9 @@ agents:
 estimation:
   lambda_lasso: 0.08
   delta: 0.05
-  mu_ridge: 0.01
+  mu_ridge: 0.0
   lasso_max_iter: 5000
   lasso_tol: 1.0e-4
 
 excitation:
-  sigma_u: 0.15
+  sigma_u: 0.05
