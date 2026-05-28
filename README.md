@@ -32,9 +32,9 @@
 
 benchmarks:
 ```
-sbatch --cpus-per-task=${NUM_CPUS} job.slurm benchmark ${NAME}
+sbatch --cpus-per-task=${CPUS} --mem=${MEM} --time=${TIME} job.slurm benchmark ${BENCHMARK_NAME}
 ```
 sweeps:
 ```
-sbatch --cpus-per-task=${NUM_CPUS} job.slurm sweep ${NAME}
+sbatch --cpus-per-task=${CPUS} --mem=${MEM} --time=${TIME} job.slurm sweep ${SWEEP_NAME}
 ```
