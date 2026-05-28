@@ -28,7 +28,6 @@ from common import ExperimentConfig
 @dataclass
 class EpisodeRecord:
     cost: float = 0.0
-    excitation_tax: float = 0.0
     diagnostics: dict = field(default_factory=dict)
 
 
@@ -52,13 +51,6 @@ class SeedResult:
         oracle_costs = np.array([ep.cost for ep in self.episodes[oracle_name]])
         agent_costs = np.array([ep.cost for ep in self.episodes[agent_name]])
         return np.cumsum(agent_costs - oracle_costs)
-
-    def adjusted_cumulative_regret(self, agent_name, oracle_name="oracle"):
-        """Cumulative regret with the deterministic excitation tax removed."""
-        oracle_costs = np.array([ep.cost for ep in self.episodes[oracle_name]])
-        agent_costs = np.array([ep.cost for ep in self.episodes[agent_name]])
-        taxes = np.array([ep.excitation_tax for ep in self.episodes[agent_name]])
-        return np.cumsum(agent_costs - taxes - oracle_costs)
 
     def diagnostic_trajectory(self, agent_name, key):
         return [ep.diagnostics.get(key, np.nan) for ep in self.episodes[agent_name]]
@@ -209,7 +201,7 @@ def run_paired_experiment(
                 if name != "oracle" and m < exp_config.m_explore:
                     u = shared_exploration[m, k]
                 else:
-                    exploration_noise = rngs[name].standard_normal(p) / (m + 1)
+                    exploration_noise = rngs[name].standard_normal(p)
                     u = agent.get_control(t, x, exploration_noise)
                 u = np.clip(u, -exp_config.action_clip, exp_config.action_clip)
 
@@ -221,11 +213,6 @@ def run_paired_experiment(
                 x = x_next
 
             cost = episode_cost(states, controls, Q, R, sys.dt)
-            tax = (
-                agent.sigma_u**2 * float(np.trace(R)) * exp_config.system.T
-                if m >= exp_config.m_explore
-                else 0.0
-            )
 
             if name != "oracle":
                 buffers[name].add_episode(zs, ys)
@@ -261,7 +248,7 @@ def run_paired_experiment(
                     diag["B_est"] = agent.B_hat.copy()
 
             result.episodes[name].append(
-                EpisodeRecord(cost=cost, excitation_tax=tax, diagnostics=diag)
+                EpisodeRecord(cost=cost, diagnostics=diag)
             )
 
     return result

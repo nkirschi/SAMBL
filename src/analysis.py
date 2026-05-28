@@ -30,17 +30,8 @@ def aggregate_trajectory(results, agent_name, key):
     return np.array(trajs)
 
 
-def cumulative_regret_trajectories(
-    results, agent_name, oracle_name="oracle", adjusted=True
-):
-    """
-    Cumulative regret trajectories, shape (n_seeds, M).
-    If adjusted=True, subtracts the deterministic excitation tax per episode.
-    """
-    if adjusted:
-        return np.array(
-            [r.adjusted_cumulative_regret(agent_name, oracle_name) for r in results]
-        )
+def cumulative_regret_trajectories(results, agent_name, oracle_name="oracle"):
+    """Cumulative regret trajectories, shape (n_seeds, M)."""
     return np.array([r.cumulative_regret(agent_name, oracle_name) for r in results])
 
 
@@ -72,15 +63,13 @@ def mean_and_ci(arr, axis=0, confidence=0.95):
 # ─────────────────────────────────────────────────────────────────────
 
 
-def _final_regret(results, agent_name, oracle_name="oracle", adjusted=True):
-    """Per-seed final adjusted (default) cumulative regret."""
-    return cumulative_regret_trajectories(
-        results, agent_name, oracle_name, adjusted=adjusted
-    )[:, -1]
+def _final_regret(results, agent_name, oracle_name="oracle"):
+    """Per-seed final cumulative regret."""
+    return cumulative_regret_trajectories(results, agent_name, oracle_name)[:, -1]
 
 
 def paired_t_test(results, agent_a, agent_b):
-    """Two-sided paired t-test on final adjusted cumulative regret."""
+    """Two-sided paired t-test on final cumulative regret."""
     vals_a = _final_regret(results, agent_a)
     vals_b = _final_regret(results, agent_b)
     diffs = vals_a - vals_b
@@ -93,7 +82,7 @@ def paired_t_test(results, agent_a, agent_b):
 
 
 def wilcoxon_test(results, agent_a, agent_b, alternative="greater"):
-    """One-sided Wilcoxon signed-rank test on final adjusted cumulative regret."""
+    """One-sided Wilcoxon signed-rank test on final cumulative regret."""
     vals_a = _final_regret(results, agent_a)
     vals_b = _final_regret(results, agent_b)
     diffs = vals_a - vals_b
@@ -107,7 +96,7 @@ def wilcoxon_test(results, agent_a, agent_b, alternative="greater"):
 
 
 def sign_test(results, agent_a, agent_b):
-    """Exact two-sided sign test on final adjusted cumulative regret."""
+    """Exact two-sided sign test on final cumulative regret."""
     vals_a = _final_regret(results, agent_a)
     vals_b = _final_regret(results, agent_b)
     diffs = vals_a - vals_b
@@ -145,7 +134,7 @@ def all_pairwise_tests(results, dense_name="dense_greedy", sparse_names=None):
 
 
 def seed_wins(results, agent_a, agent_b, oracle_name="oracle"):
-    """Seeds where agent_b has lower final adjusted regret than agent_a."""
+    """Seeds where agent_b has lower final cumulative regret than agent_a."""
     return int(
         np.sum(
             _final_regret(results, agent_b, oracle_name)
@@ -214,12 +203,7 @@ def final_summary_table(results, agent_names, oracle_name="oracle"):
     table = {}
     for name in agent_names:
         row = {
-            "final_regret": _stats(
-                _final_regret(results, name, oracle_name, adjusted=True)
-            ),
-            "final_regret_raw": _stats(
-                _final_regret(results, name, oracle_name, adjusted=False)
-            ),
+            "final_regret": _stats(_final_regret(results, name, oracle_name)),
         }
         for key in [
             "error_joint",
@@ -241,7 +225,7 @@ def final_summary_table(results, agent_names, oracle_name="oracle"):
 
 def print_summary(table):
     header = (
-        f"{'Agent':<22} {'Regret(adj)':>14} {'Regret(raw)':>14} {'Err(joint)':>12}"
+        f"{'Agent':<22} {'Regret':>14} {'Err(joint)':>12}"
         f"{'Err(A)':>12} {'Err(B)':>12} {'F1(joint)':>12} {'F1(A)':>12} {'F1(B)':>12}"
     )
     print(header)
@@ -253,7 +237,7 @@ def print_summary(table):
             return f"{float(m):.2f}±{float(ci):.2f}"
 
         print(
-            f"{name:<22} {fmt('final_regret'):>14} {fmt('final_regret_raw'):>14} "
+            f"{name:<22} {fmt('final_regret'):>14} "
             f"{fmt('error_joint'):>12} {fmt('error_A'):>12} {fmt('error_B'):>12} "
             f"{fmt('support_f1_joint'):>12} {fmt('support_f1_A'):>12} {fmt('support_f1_B'):>12}"
         )
@@ -273,15 +257,15 @@ def plot_trajectories(results, exp_config: ExperimentConfig, save_path=None):
         "oracle":        "green",
         "dense_greedy":  "blue",
         "dense_excited": "purple",
-        "sparse_greedy": "orange",
-        "sparse_excited":"red",
+        "sparse_greedy": "red",
+        "sparse_excited":"orange",
     }
     LABELS = {
         "oracle":        "Oracle",
         "dense_greedy":  "Dense-Greedy",
-        "dense_excited": "Dense-Excitation",
+        "dense_excited": "Dense-Excited",
         "sparse_greedy": "Sparse-Greedy",
-        "sparse_excited":"Sparse-Excitation",
+        "sparse_excited":"Sparse-Excited",
     }
 
     M = exp_config.max_episodes
@@ -343,25 +327,12 @@ def plot_trajectories(results, exp_config: ExperimentConfig, save_path=None):
 
             # Data extraction
             if key == "cumul_regret":
-                data = cumulative_regret_trajectories(
-                    results, name, "oracle", adjusted=True
-                )
+                data = cumulative_regret_trajectories(results, name, "oracle")
             elif key == "per_ep_regret":
                 if name == "oracle":
                     data = np.zeros((len(results), M))
                 else:
-                    taxes = (
-                        np.array([
-                            [ep.excitation_tax for ep in r.episodes[name]]
-                            for r in results
-                        ])
-                        if name in ("sparse_excited", "dense_excited")
-                        else 0.0
-                    )
-                    data = (
-                        per_episode_regret_trajectories(results, name, "oracle")
-                        - taxes
-                    )
+                    data = per_episode_regret_trajectories(results, name, "oracle")
             elif key == "episode_cost":
                 data = cost_trajectories(results, name)
             else:
@@ -387,18 +358,6 @@ def plot_trajectories(results, exp_config: ExperimentConfig, save_path=None):
                 valid_episodes, ci_lo, ci_hi,
                 color=COLORS[name], alpha=0.15,
             )
-
-            # Dashed unadjusted line for excited agents on cumul_regret panels
-            if key == "cumul_regret" and name in ("sparse_excited", "dense_excited"):
-                raw = cumulative_regret_trajectories(
-                    results, name, "oracle", adjusted=False
-                )
-                raw_mean, _, _ = mean_and_ci(raw, axis=0)
-                ax.plot(
-                    episodes, raw_mean,
-                    color=COLORS[name], linestyle="--", linewidth=1.0,
-                    label=f"{LABELS[name]} (raw)", alpha=0.55,
-                )
 
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("Episode", fontsize=8)
@@ -426,9 +385,9 @@ def plot_basin_entry_comparison(results, exp_config: ExperimentConfig, save_path
     valid = ratios[np.isfinite(ratios)]
     if len(valid) > 0:
         ax.hist(valid, bins=20, alpha=0.7, label="Empirical ratios")
-        ax.axvline(median, color="blue", linestyle="--", label=f"Median: {median:.2f}")
+        ax.axvline(median, color="blue", linestyle="--", label=f"Median: {float(median):.2f}")
     ax.axvline(
-        theoretical, color="red", linestyle="-", label=f"Theory: {theoretical:.2f}"
+        theoretical, color="red", linestyle="-", label=f"Theory: {float(theoretical):.2f}"
     )
     ax.set_xlabel(r"$m_0^{\mathrm{dense}} / m_0^{\mathrm{sparse}}$")
     ax.set_ylabel("Count")
@@ -511,10 +470,8 @@ def plot_sparsity_evolution(results, exp_config: ExperimentConfig, output_dir):
             ("B", B_true, mask_B, p),
         ]:
             n_cols, n_rows = 1 + len(checkpoint_episodes), len(LEARNING_AGENTS)
-            fig_w, fig_h = (
-                min(n_cols * ncols_matrix * 0.35 + n_cols * 0.15 + 1.5, 28.0),
-                min(n_rows * d * 0.35 + n_rows * 0.15 + 1.0, 20.0),
-            )
+            fig_w = min(n_cols * ncols_matrix * 0.35 + n_cols * 0.15 + 1.5, 28.0)
+            fig_h = min(n_rows * d * 0.35 + n_rows * 0.15 + 1.0, 20.0)
 
             fig, axes = plt.subplots(
                 n_rows,
@@ -531,9 +488,7 @@ def plot_sparsity_evolution(results, exp_config: ExperimentConfig, output_dir):
                     if col_idx == 0:
                         mat = true_mat
                     else:
-                        ep = result.episodes[agent_name][
-                            checkpoint_episodes[col_idx - 1]
-                        ]
+                        ep = result.episodes[agent_name][checkpoint_episodes[col_idx - 1]]
                         mat = ep.diagnostics.get(f"{block}_est", None)
                         if mat is None:
                             ax.set_visible(False)
@@ -617,10 +572,8 @@ def plot_error_evolution(results, exp_config: ExperimentConfig, output_dir):
             ("B", B_true, mask_B, p),
         ]:
             n_cols, n_rows = 1 + len(checkpoint_episodes), len(LEARNING_AGENTS)
-            fig_w, fig_h = (
-                min(n_cols * ncols_matrix * 0.35 + n_cols * 0.15 + 1.5, 28.0),
-                min(n_rows * d * 0.35 + n_rows * 0.15 + 1.0, 20.0),
-            )
+            fig_w = min(n_cols * ncols_matrix * 0.35 + n_cols * 0.15 + 1.5, 28.0)
+            fig_h = min(n_rows * d * 0.35 + n_rows * 0.15 + 1.0, 20.0)
 
             fig, axes = plt.subplots(
                 n_rows,
@@ -637,9 +590,7 @@ def plot_error_evolution(results, exp_config: ExperimentConfig, output_dir):
                     if col_idx == 0:
                         mat = np.abs(true_mat)
                     else:
-                        ep = result.episodes[agent_name][
-                            checkpoint_episodes[col_idx - 1]
-                        ]
+                        ep = result.episodes[agent_name][checkpoint_episodes[col_idx - 1]]
                         est = ep.diagnostics.get(f"{block}_est", None)
                         if est is None:
                             ax.set_visible(False)
@@ -695,11 +646,11 @@ def plot_self_exploration_diagnostics(
     save_path: str = None,
 ) -> None:
     """
-    Two-panel diagnostic for the self-exploration condition.
+    Two-panel diagnostic for the self-exploration condition (Basei et al. 2022, Prop 2.1).
 
-    Left:  Scatter of lambda_min(B*^T Q B*) vs final adjusted cumulative
-           regret per seed, one series per learning agent. A vertical dashed
-           line at zero marks the boundary of Basei et al. (2022) Prop 2.1(1).
+    Left:  Scatter of lambda_min(B*^T Q B*) vs final cumulative regret per seed,
+           one series per learning agent. Vertical dashed line at zero marks the
+           boundary of the sufficient condition for identifiability.
 
     Right: Histogram of lambda_min across seeds with the same reference line.
     """
@@ -707,22 +658,22 @@ def plot_self_exploration_diagnostics(
     import os
 
     COLORS = {
-        "dense_greedy":   "blue",
-        "dense_excited":  "purple",
-        "sparse_greedy":  "orange",
-        "sparse_excited": "red",
+        "dense_greedy":  "blue",
+        "dense_excited": "purple",
+        "sparse_greedy": "red",
+        "sparse_excited":"orange",
     }
     LABELS = {
-        "dense_greedy":   "Dense-Greedy",
-        "dense_excited":  "Dense-Excitation",
-        "sparse_greedy":  "Sparse-Greedy",
-        "sparse_excited": "Sparse-Excitation",
+        "dense_greedy":  "Dense-Greedy",
+        "dense_excited": "Dense-Excitation",
+        "sparse_greedy": "Sparse-Greedy",
+        "sparse_excited":"Sparse-Excitation",
     }
     MARKERS = {
-        "dense_greedy":   "o",
-        "dense_excited":  "s",
-        "sparse_greedy":  "^",
-        "sparse_excited": "D",
+        "dense_greedy":  "o",
+        "dense_excited": "s",
+        "sparse_greedy": "^",
+        "sparse_excited":"D",
     }
 
     learning_agents = [a for a in exp_config.agents if a != "oracle" and a in COLORS]
@@ -733,9 +684,7 @@ def plot_self_exploration_diagnostics(
     # ── Left: scatter min_eig vs final adjusted regret ───────────────
     ax = axes[0]
     for name in learning_agents:
-        final_regrets = np.array([
-            r.adjusted_cumulative_regret(name)[-1] for r in results
-        ])
+        final_regrets = np.array([r.cumulative_regret(name)[-1] for r in results])
         ax.scatter(
             min_eigs,
             final_regrets,
@@ -751,7 +700,7 @@ def plot_self_exploration_diagnostics(
         label=r"$\lambda_{\min} = 0$",
     )
     ax.set_xlabel(r"$\lambda_{\min}(\mathbf{B}_\star^\top \mathbf{Q} \, \mathbf{B}_\star)$")
-    ax.set_ylabel("Final adjusted cumulative regret")
+    ax.set_ylabel("Final cumulative regret")
     ax.set_title("Self-exploration condition vs regret")
     ax.legend(fontsize=8, framealpha=0.7)
 
