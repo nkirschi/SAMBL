@@ -13,7 +13,6 @@ class SystemConfig:
     a_scale: float
     b_scale: float
     coeff_lower: float
-    max_instability: float
     sigma: float
     dt: float
     T: float
@@ -107,7 +106,6 @@ class ExperimentConfig:
             a_scale=sys.get("a_scale", 0.5),
             b_scale=sys.get("b_scale", 0.5),
             coeff_lower=sys.get("coeff_lower", 0.1),
-            max_instability=sys.get("max_instability", 1.0),
             sigma=sim.get("sigma", 0.5),
             dt=sim.get("dt", 0.025),
             T=sim.get("T", 1.0),

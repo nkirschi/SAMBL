@@ -9,7 +9,6 @@ def _sample(d=6, p=2, s_A=2, s_B=1, seed=0, **kwargs):
         "a_scale": 0.5,
         "b_scale": 0.5,
         "coeff_lower": 0.1,
-        "max_instability": 1.0,
     }
     default_kwargs.update(kwargs)
     return sample_sparse_system(d, p, s_A, s_B, seed, **default_kwargs)
@@ -19,17 +18,17 @@ class TestIsStabilisable:
     def test_stable_system_always_stabilisable(self):
         A = np.diag([-1.0, -2.0, -0.5])
         B = np.zeros((3, 1))
-        assert _is_stabilisable(A, B, np.linalg.eigvals(A)) is True
+        assert _is_stabilisable(A, B) is True
 
     def test_unstable_mode_reachable(self):
         A = np.diag([0.5, -1.0])
         B = np.array([[1.0], [0.0]])
-        assert _is_stabilisable(A, B, np.linalg.eigvals(A)) is True
+        assert _is_stabilisable(A, B) is True
 
     def test_unstable_mode_unreachable(self):
         A = np.diag([0.5, -1.0])
         B = np.array([[0.0], [1.0]])
-        assert _is_stabilisable(A, B, np.linalg.eigvals(A)) is False
+        assert _is_stabilisable(A, B) is False
 
 
 class TestSampleSparseSystem:
@@ -79,11 +78,6 @@ class TestSampleSparseSystem:
         A, B, _, _ = _sample(d=8, p=3, s_A=2, s_B=1, seed=3)
         assert not np.any(np.all(B == 0, axis=0))
 
-    def test_max_instability_respected(self):
-        for seed in range(20):
-            A, _, _, _ = _sample(seed=seed, max_instability=0.8)
-            assert float(np.max(np.real(np.linalg.eigvals(A)))) <= 0.8 + 1e-10
-
     def test_raises_on_impossible_config(self):
         with pytest.raises(RuntimeError, match="Failed to sample"):
             sample_sparse_system(
@@ -95,6 +89,5 @@ class TestSampleSparseSystem:
                 a_scale=0.5,
                 b_scale=0.5,
                 coeff_lower=0.1,
-                max_instability=0.01,
                 max_attempts=5,
             )

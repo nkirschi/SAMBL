@@ -144,7 +144,6 @@ def run_paired_experiment(
         a_scale=exp_config.system.a_scale,
         b_scale=exp_config.system.b_scale,
         coeff_lower=exp_config.system.coeff_lower,
-        max_instability=exp_config.system.max_instability,
     )
 
     Q = np.eye(d) * exp_config.cost.q_scale

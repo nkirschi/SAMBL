@@ -11,8 +11,7 @@ so that E[|coeff|] = x_scale and minimum magnitude = coeff_lower.
 
 Rejection sampling on three criteria:
     (i)  No all-zero columns in B.
-    (ii) Bounded instability: max Re(lambda(A)) <= max_instability.
-    (iii) Stabilisability via the Hautus lemma.
+    (ii) Stabilisability via the Hautus lemma.
 """
 
 from __future__ import annotations
@@ -31,7 +30,6 @@ def sample_sparse_system(
     a_scale: float,
     b_scale: float,
     coeff_lower: float,
-    max_instability: float,
     max_attempts: int = 100,
 ) -> Tuple[NDArray[np.float64], NDArray[np.float64], List[Set[int]], int]:
     """
@@ -67,27 +65,21 @@ def sample_sparse_system(
         if np.any(np.all(B == 0, axis=0)):
             continue
 
-        # (ii) Bounded instability
-        eigenvalues = np.linalg.eigvals(A)
-        if float(np.max(np.real(eigenvalues))) > max_instability:
-            continue
-
-        # (iii) Stabilisability
-        if not _is_stabilisable(A, B, eigenvalues):
+        # (ii) Stabilisability
+        if not _is_stabilisable(A, B):
             continue
 
         return A, B, supports, attempt
 
     raise RuntimeError(
-        f"Failed to sample a valid system after {max_attempts} attempts."
-        f"Consider increasing max_instability or max_attempts."
+        f"Failed to sample a valid system after {max_attempts} attempts. "
+        f"Consider increasing max_attempts."
     )
 
 
 def _is_stabilisable(
     A: NDArray[np.float64],
     B: NDArray[np.float64],
-    eigenvalues: NDArray[np.complex128] = None,
     tol: float = 1e-8,
 ) -> bool:
     """
@@ -101,8 +93,7 @@ def _is_stabilisable(
     Hespanha, "Linear Systems Theory" (2018), Theorem 14.3
     """
     d = A.shape[0]
-    if eigenvalues is None:
-        eigenvalues = np.linalg.eigvals(A)
+    eigenvalues = np.linalg.eigvals(A)
     for lam in eigenvalues:
         if np.real(lam) >= 0:
             block = np.hstack([lam * np.eye(d) - A, B])
@@ -114,7 +105,6 @@ def _is_stabilisable(
 def _is_controllable(
     A: NDArray[np.float64],
     B: NDArray[np.float64],
-    eigenvalues: NDArray[np.complex128] = None,
     tol: float = 1e-8,
 ) -> bool:
     """
@@ -128,8 +118,7 @@ def _is_controllable(
     Hespanha, "Linear Systems Theory" (2018), Theorem 12.3
     """
     d = A.shape[0]
-    if eigenvalues is None:
-        eigenvalues = np.linalg.eigvals(A)
+    eigenvalues = np.linalg.eigvals(A)
     for lam in eigenvalues:
         block = np.hstack([lam * np.eye(d) - A, B])
         if np.linalg.matrix_rank(block, tol=tol) < d:
