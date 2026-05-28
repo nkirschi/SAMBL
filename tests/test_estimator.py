@@ -11,8 +11,8 @@ from estimator import (
 @pytest.fixture
 def default_dims():
     return {
-        "x_dim": 4,
-        "u_dim": 2,
+        "d": 4,
+        "p": 2,
         "max_episodes": 5,
         "steps_per_episode": 20,
     }
@@ -20,9 +20,8 @@ def default_dims():
 @pytest.fixture
 def configs(default_dims):
     sys_cfg = SystemConfig(
-        x_dim=default_dims["x_dim"], u_dim=default_dims["u_dim"], 
-        s_A=2, s_B=1, a_scale=0.5, b_scale=0.5, coeff_lower=0.1, 
-        max_instability=1.0, sigma=0.5, dt=0.01, T=1.0
+        d=default_dims["d"], p=default_dims["p"], 
+        s_A=2, s_B=1, a_min=0.1, a_max=1.9, b_min=0.1, b_max=1.9, sigma=0.5, dt=0.01, T=1.0
     )
     est_cfg = EstimatorConfig(
         mu_ridge=1e-10, lambda_lasso=None, c_lambda=2.0, delta=0.05, 
@@ -32,7 +31,7 @@ def configs(default_dims):
 
 @pytest.fixture
 def synthetic_data(default_dims):
-    d, p = default_dims["x_dim"], default_dims["u_dim"]
+    d, p = default_dims["d"], default_dims["p"]
     H = default_dims["steps_per_episode"]
     
     Theta_true = np.zeros((d, d + p))
@@ -49,7 +48,7 @@ def synthetic_data(default_dims):
 @pytest.mark.quick
 def test_ridge_estimator_perfect_recovery(default_dims, configs, synthetic_data):
     _, est_cfg = configs
-    d, p = default_dims["x_dim"], default_dims["u_dim"]
+    d, p = default_dims["d"], default_dims["p"]
     H = default_dims["steps_per_episode"]
     zs, ys, Theta_true = synthetic_data
     
@@ -70,7 +69,7 @@ def test_lasso_estimator_sparse_recovery(default_dims, configs, synthetic_data):
         lasso_max_iter=1000, lasso_tol=1e-6
     )
     
-    d, p = default_dims["x_dim"], default_dims["u_dim"]
+    d, p = default_dims["d"], default_dims["p"]
     H = default_dims["steps_per_episode"]
     zs, ys, Theta_true = synthetic_data
     
@@ -94,7 +93,7 @@ def test_lasso_warm_starting(default_dims, configs, synthetic_data):
         lasso_max_iter=1000, lasso_tol=1e-6
     )
     
-    d, p = default_dims["x_dim"], default_dims["u_dim"]
+    d, p = default_dims["d"], default_dims["p"]
     H = default_dims["steps_per_episode"]
     zs, ys, _ = synthetic_data
     

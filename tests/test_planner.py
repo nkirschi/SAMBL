@@ -7,8 +7,7 @@ from planner import RiccatiODESolver
 @pytest.fixture
 def config():
     return SystemConfig(
-        x_dim=1, u_dim=1, s_A=1, s_B=1, a_scale=1.0, b_scale=1.0, 
-        coeff_lower=0.1, max_instability=1.0, sigma=1.0, dt=0.01, T=5.0
+        d=1, p=1, s_A=1, s_B=1, a_min=0.1, a_max=1.9, b_min=0.1, b_max=1.9, sigma=1.0, dt=0.01, T=5.0
     )
 
 @pytest.mark.quick

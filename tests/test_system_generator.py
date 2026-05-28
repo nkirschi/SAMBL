@@ -6,9 +6,10 @@ from system_generator import sample_sparse_system, _is_stabilisable
 
 def _sample(d=6, p=2, s_A=2, s_B=1, seed=0, **kwargs):
     default_kwargs = {
-        "a_scale": 0.5,
-        "b_scale": 0.5,
-        "coeff_lower": 0.1,
+        "a_min": 0.1,
+        "a_max": 1.9,
+        "b_min": 0.1,
+        "b_max": 1.9,
     }
     default_kwargs.update(kwargs)
     return sample_sparse_system(d, p, s_A, s_B, seed, **default_kwargs)
@@ -54,25 +55,25 @@ class TestSampleSparseSystem:
             assert len(b_cols) == s_B
 
     def test_coefficient_magnitudes_in_expected_range(self):
-        a_scale, b_scale, lower = 0.6, 0.4, 0.1
+        a_min, a_max = 0.1, 1.9
+        b_min, b_max = 0.1, 1.9
         A, B, supports, _ = _sample(
             d=8,
             p=3,
             s_A=2,
             s_B=1,
             seed=5,
-            a_scale=a_scale,
-            b_scale=b_scale,
-            coeff_lower=lower,
+            a_min=a_min,
+            a_max=a_max,
+            b_min=b_min,
+            b_max=b_max
         )
-        a_upper = 2 * a_scale - lower
-        b_upper = 2 * b_scale - lower
         for i, supp in enumerate(supports):
             for j in supp:
                 if j < 8:
-                    assert lower <= abs(A[i, j]) <= a_upper + 1e-12
+                    assert a_min <= abs(A[i, j]) <= a_max
                 else:
-                    assert lower <= abs(B[i, j - 8]) <= b_upper + 1e-12
+                    assert b_min <= abs(B[i, j - 8]) <= b_max
 
     def test_no_all_zero_b_columns(self):
         A, B, _, _ = _sample(d=8, p=3, s_A=2, s_B=1, seed=3)
@@ -86,8 +87,9 @@ class TestSampleSparseSystem:
                 s_A=1,
                 s_B=1,
                 seed=0,
-                a_scale=0.5,
-                b_scale=0.5,
-                coeff_lower=0.1,
+                a_min=0.1,
+                a_max=1.9,
+                b_min=0.1,
+                b_max=1.9,
                 max_attempts=5,
             )

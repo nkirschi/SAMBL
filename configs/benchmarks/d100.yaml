@@ -2,13 +2,14 @@
 name: d100
 
 system:
-  x_dim: 100
-  u_dim: 25
+  d: 100
+  p: 25
   s_A: 2
   s_B: 1
-  a_scale: 0.5
-  b_scale: 0.5
-  coeff_lower: 0.1
+  a_min: 0.1
+  a_max: 1.9
+  b_min: 0.1
+  b_max: 1.9
   max_instability: 1.0
 
 simulation:

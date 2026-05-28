@@ -6,13 +6,14 @@ import numpy as np
 
 @dataclass(frozen=True)
 class SystemConfig:
-    x_dim: int
-    u_dim: int
+    d: int
+    p: int
     s_A: int
     s_B: int
-    a_scale: float
-    b_scale: float
-    coeff_lower: float
+    a_min: float
+    a_max: float
+    b_min: float
+    b_max: float
     sigma: float
     dt: float
     T: float
@@ -72,15 +73,15 @@ class ExperimentConfig:
     @property
     def m_explore(self) -> int:
         """Required episodes for pure exploration phase."""
-        return int(np.ceil(2 * (self.system.x_dim + self.system.u_dim) / self.system.H))
+        return int(np.ceil(2 * (self.system.d + self.system.p) / self.system.H))
 
     @property
     def theoretical_speedup(self) -> float:
-        d_plus_p = self.system.x_dim + self.system.u_dim
+        d_plus_p = self.system.d + self.system.p
         return d_plus_p / (self.system.sparsity * np.log(d_plus_p))
 
     def theoretical_lambda(self, N):
-        d, p, M = self.system.x_dim, self.system.u_dim, self.max_episodes
+        d, p, M = self.system.d, self.system.p, self.max_episodes
         log_term = np.log((d + p) * M * d / self.estimators.delta)
         return self.estimators.c_lambda * self.system.sigma_bar * np.sqrt(log_term / N)
 
@@ -99,16 +100,17 @@ class ExperimentConfig:
         train = raw.get("training", {})
 
         system_cfg = SystemConfig(
-            x_dim=sys["x_dim"],
-            u_dim=sys["u_dim"],
+            d=sys["d"],
+            p=sys["p"],
             s_A=sys["s_A"],
             s_B=sys["s_B"],
-            a_scale=sys.get("a_scale", 0.5),
-            b_scale=sys.get("b_scale", 0.5),
-            coeff_lower=sys.get("coeff_lower", 0.1),
-            sigma=sim.get("sigma", 0.5),
-            dt=sim.get("dt", 0.025),
-            T=sim.get("T", 1.0),
+            a_min=sys["a_min"],
+            a_max=sys["a_max"],
+            b_min=sys["b_min"],
+            b_max=sys["b_max"],
+            sigma=sim["sigma"],
+            dt=sim["dt"],
+            T=sim["T"],
         )
 
         cost_cfg = CostConfig(

@@ -24,14 +24,14 @@ class RiccatiODESolver:
         S = B @ R_inv_B_T
 
         def riccati_ode(_, p_flat):
-            P = p_flat.reshape(self.sys_cfg.x_dim, self.sys_cfg.x_dim)
+            P = p_flat.reshape(self.sys_cfg.d, self.sys_cfg.d)
             dP_dtau = A.T @ P + P @ A - P @ S @ P + self.Q
             return dP_dtau.flatten()
 
         if terminal_cost is not None:
             p_final = terminal_cost.flatten()
         else:
-            p_final = np.zeros(self.sys_cfg.x_dim**2)
+            p_final = np.zeros(self.sys_cfg.d**2)
 
         sol = solve_ivp(
             riccati_ode,
@@ -54,10 +54,10 @@ class RiccatiODESolver:
         P(t) is retrieved via the dense interpolant.
         """
         if self.solution is None:
-            return np.zeros((self.sys_cfg.u_dim, self.sys_cfg.x_dim), dtype=np.float64)
+            return np.zeros((self.sys_cfg.p, self.sys_cfg.d), dtype=np.float64)
 
         tau = self.sys_cfg.T - t  # map physics time t -> solver time tau
         P_flat = self.solution.sol(tau)
-        P = P_flat.reshape(self.sys_cfg.x_dim, self.sys_cfg.x_dim)
+        P = P_flat.reshape(self.sys_cfg.d, self.sys_cfg.d)
         K = cho_solve(self.R_cho, -B.T @ P)
         return K

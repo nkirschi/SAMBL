@@ -1,7 +1,0 @@
-# Vary control dimension; s_B scales to stay within bounds
-base: d10
-vary:
-  - {b_scale: 1.0}
-  - {b_scale: 0.5}
-  - {b_scale: 0.2}
-  - {b_scale: 2.0}

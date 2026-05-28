@@ -81,8 +81,8 @@ class RowLassoEstimator:
         est_cfg: EstimatorConfig,
         lamda_schedule: callable = None,
     ):
-        self.x_dim = sys_cfg.x_dim
-        self.z_dim = sys_cfg.x_dim + sys_cfg.u_dim
+        self.x_dim = sys_cfg.d
+        self.z_dim = sys_cfg.d + sys_cfg.p
         self.lamda_fixed = est_cfg.lambda_lasso
         self.lamda_schedule = lamda_schedule
 

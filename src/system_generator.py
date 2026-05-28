@@ -4,12 +4,11 @@ Generates random sparse linear-quadratic systems for benchmarking.
 Each row of [A_star | B_star] has exactly s_A nonzeros
 in the A block and s_B nonzeros in the B block.
 
-Coefficient magnitude distribution for block X with scale x_scale:
-    magnitude ~ Uniform(coeff_lower, 2 * x_scale - coeff_lower)
-    sign      ~ Uniform({-1, +1})
-so that E[|coeff|] = x_scale and minimum magnitude = coeff_lower.
+Nonzero magnitudes are drawn uniformly from [a_min, a_max] for A entries
+and [b_min, b_max] for B entries, with a random sign applied independently.
+The lower bounds define the signal gap required for Lasso support recovery.
 
-Rejection sampling on three criteria:
+Rejection sampling on two criteria:
     (i)  No all-zero columns in B.
     (ii) Stabilisability via the Hautus lemma.
 """
@@ -27,21 +26,19 @@ def sample_sparse_system(
     s_A: int,
     s_B: int,
     seed: int,
-    a_scale: float,
-    b_scale: float,
-    coeff_lower: float,
+    a_min: float,
+    a_max: float,
+    b_min: float,
+    b_max: float,
     max_attempts: int = 100,
 ) -> Tuple[NDArray[np.float64], NDArray[np.float64], List[Set[int]], int]:
     """
     Sample a sparse, stabilisable LQ system.
     """
-
     assert 0 < s_A <= d
     assert 0 < s_B <= p
-    assert a_scale > coeff_lower > 0
-    assert b_scale > coeff_lower > 0
-    a_upper = 2.0 * a_scale - coeff_lower
-    b_upper = 2.0 * b_scale - coeff_lower
+    assert 0 < a_min < a_max
+    assert 0 < b_min < b_max
 
     rng = np.random.default_rng(seed)
 
@@ -55,9 +52,9 @@ def sample_sparse_system(
             b_cols = rng.choice(p, size=s_B, replace=False)
 
             for j in a_cols:
-                A[i, j] = rng.choice([-1, 1]) * rng.uniform(coeff_lower, a_upper)
+                A[i, j] = rng.choice([-1, 1]) * rng.uniform(a_min, a_max)
             for j in b_cols:
-                B[i, j] = rng.choice([-1, 1]) * rng.uniform(coeff_lower, b_upper)
+                B[i, j] = rng.choice([-1, 1]) * rng.uniform(b_min, b_max)
 
             supports.append({int(j) for j in a_cols} | {int(j + d) for j in b_cols})
 

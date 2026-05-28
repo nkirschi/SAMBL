@@ -101,7 +101,7 @@ def _print_config(name: str, exp_config: ExperimentConfig) -> None:
     print(f"\n{'=' * 60}")
     print(f"Benchmark: {name}")
     print(
-        f"  d={exp_config.system.x_dim}, p={exp_config.system.u_dim}, "
+        f"  d={exp_config.system.d}, p={exp_config.system.p}, "
         f"s={exp_config.system.sparsity}="
         f"{exp_config.system.s_A}+{exp_config.system.s_B}=s_A+s_B"
     )

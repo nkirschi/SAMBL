@@ -336,7 +336,7 @@ def plot_trajectories(results, exp_config: ExperimentConfig, save_path=None):
 
     # Updated to use nested dataclass attributes
     fig.suptitle(
-        f"$d={exp_config.system.x_dim}$, $p={exp_config.system.u_dim}$, "
+        f"$d={exp_config.system.d}$, $p={exp_config.system.p}$, "
         f"$s={exp_config.system.sparsity}$, $M={exp_config.max_episodes}$, "
         f"$T={exp_config.system.T}$, "
         r"$\sigma=$" + f"{exp_config.system.sigma}, "
@@ -528,7 +528,7 @@ def plot_sparsity_evolution(results, exp_config: ExperimentConfig, output_dir):
         "sparse_excited": "Sparse-Ex",
     }
 
-    d, p, M = exp_config.system.x_dim, exp_config.system.u_dim, exp_config.max_episodes
+    d, p, M = exp_config.system.d, exp_config.system.p, exp_config.max_episodes
 
     n_checkpoints = min(8, M)
     checkpoint_episodes = sorted(
@@ -641,7 +641,7 @@ def plot_error_evolution(results, exp_config: ExperimentConfig, output_dir):
         "sparse_excited": "Sparse-Ex",
     }
 
-    d, p, M = exp_config.system.x_dim, exp_config.system.u_dim, exp_config.max_episodes
+    d, p, M = exp_config.system.d, exp_config.system.p, exp_config.max_episodes
     n_checkpoints = min(8, M)
     checkpoint_episodes = sorted(
         set(np.round(np.linspace(0, M - 1, n_checkpoints)).astype(int).tolist())
@@ -825,7 +825,7 @@ def plot_self_exploration_diagnostics(
 
     fig.suptitle(
         rf"Self-exploration diagnostics — "
-        rf"$d={exp_config.system.x_dim}$, $p={exp_config.system.u_dim}$, "
+        rf"$d={exp_config.system.d}$, $p={exp_config.system.p}$, "
         rf"$s={exp_config.system.sparsity}$, $N={{{len(results)}}}$ seeds",
         fontsize=11,
     )

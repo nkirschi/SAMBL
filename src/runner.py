@@ -73,7 +73,7 @@ def _build_agent(
     R: np.ndarray,
 ) -> LinearControlAgent:
     """Instantiate agents by name."""
-    d, p = exp_config.system.x_dim, exp_config.system.u_dim
+    d, p = exp_config.system.d, exp_config.system.p
     planner = RiccatiODESolver(exp_config.system, Q, R)
     prior_theta = np.concatenate([-np.eye(d), np.zeros((d, p))], axis=1)
 
@@ -132,7 +132,7 @@ def run_paired_experiment(
     exp_config: ExperimentConfig, seed: int, verbose: bool = False
 ) -> SeedResult:
     """Run one paired-seed experiment: all configured agents on the same system and noise."""
-    d, p = exp_config.system.x_dim, exp_config.system.u_dim
+    d, p = exp_config.system.d, exp_config.system.p
     M, H = exp_config.max_episodes, exp_config.system.H
 
     A_star, B_star, supports, n_attempts = sample_sparse_system(
@@ -141,9 +141,10 @@ def run_paired_experiment(
         s_A=exp_config.system.s_A,
         s_B=exp_config.system.s_B,
         seed=seed,
-        a_scale=exp_config.system.a_scale,
-        b_scale=exp_config.system.b_scale,
-        coeff_lower=exp_config.system.coeff_lower,
+        a_min=exp_config.system.a_min,
+        a_max=exp_config.system.a_max,
+        b_min=exp_config.system.b_min,
+        b_max=exp_config.system.b_max,
     )
 
     Q = np.eye(d) * exp_config.cost.q_scale
