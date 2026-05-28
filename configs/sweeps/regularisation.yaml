@@ -1,0 +1,27 @@
+base: d10
+vary:
+  - {c_lambda: 0.02, mu_ridge: 0.02}
+  - {c_lambda: 0.02, mu_ridge: 0.05}
+  - {c_lambda: 0.02, mu_ridge: 0.01}
+  - {c_lambda: 0.02, mu_ridge: 0.005}
+  - {c_lambda: 0.02, mu_ridge: 0.001}
+  - {c_lambda: 0.05, mu_ridge: 0.02}
+  - {c_lambda: 0.05, mu_ridge: 0.05}
+  - {c_lambda: 0.05, mu_ridge: 0.01}
+  - {c_lambda: 0.05, mu_ridge: 0.005}
+  - {c_lambda: 0.02, mu_ridge: 0.001}
+  - {c_lambda: 0.1, mu_ridge: 0.02}
+  - {c_lambda: 0.1, mu_ridge: 0.05}
+  - {c_lambda: 0.1, mu_ridge: 0.01}
+  - {c_lambda: 0.1, mu_ridge: 0.005}
+  - {c_lambda: 0.02, mu_ridge: 0.001}
+  - {c_lambda: 0.01, mu_ridge: 0.02}
+  - {c_lambda: 0.01, mu_ridge: 0.05}
+  - {c_lambda: 0.01, mu_ridge: 0.01}
+  - {c_lambda: 0.01, mu_ridge: 0.005}
+  - {c_lambda: 0.02, mu_ridge: 0.001}
+  - {c_lambda: 0.005, mu_ridge: 0.02}
+  - {c_lambda: 0.005, mu_ridge: 0.05}
+  - {c_lambda: 0.005, mu_ridge: 0.01}
+  - {c_lambda: 0.005, mu_ridge: 0.005}
+  - {c_lambda: 0.02, mu_ridge: 0.001}
