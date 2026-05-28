@@ -735,3 +735,104 @@ def plot_error_evolution(results, exp_config: ExperimentConfig, output_dir):
                 bbox_inches="tight",
             )
             plt.close(fig)
+
+
+def plot_self_exploration_diagnostics(
+    results: list,
+    exp_config: ExperimentConfig,
+    save_path: str = None,
+) -> None:
+    """
+    Two-panel diagnostic for the self-exploration condition.
+
+    Left:  Scatter of lambda_min(B*^T Q B*) vs final adjusted cumulative
+           regret per seed, one series per learning agent. A vertical dashed
+           line at zero marks the boundary of Basei et al. (2022) Prop 2.1(1).
+
+    Right: Histogram of lambda_min across seeds with the same reference line.
+    """
+    import matplotlib.pyplot as plt
+    import os
+
+    COLORS = {
+        "dense_greedy":   "blue",
+        "dense_excited":  "purple",
+        "sparse_greedy":  "orange",
+        "sparse_excited": "red",
+    }
+    LABELS = {
+        "dense_greedy":   "Dense-Greedy",
+        "dense_excited":  "Dense-Excitation",
+        "sparse_greedy":  "Sparse-Greedy",
+        "sparse_excited": "Sparse-Excitation",
+    }
+    MARKERS = {
+        "dense_greedy":   "o",
+        "dense_excited":  "s",
+        "sparse_greedy":  "^",
+        "sparse_excited": "D",
+    }
+
+    learning_agents = [a for a in exp_config.agents if a != "oracle" and a in COLORS]
+    min_eigs = np.array([r.btqb_min_eig for r in results])
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # ── Left: scatter min_eig vs final adjusted regret ───────────────
+    ax = axes[0]
+    for name in learning_agents:
+        final_regrets = np.array([
+            r.adjusted_cumulative_regret(name)[-1] for r in results
+        ])
+        ax.scatter(
+            min_eigs,
+            final_regrets,
+            color=COLORS[name],
+            marker=MARKERS[name],
+            label=LABELS[name],
+            alpha=0.75,
+            s=45,
+            zorder=3,
+        )
+    ax.axvline(
+        0, color="black", linestyle="--", linewidth=0.9, alpha=0.6,
+        label=r"$\lambda_{\min} = 0$",
+    )
+    ax.set_xlabel(r"$\lambda_{\min}(\mathbf{B}_\star^\top \mathbf{Q} \, \mathbf{B}_\star)$")
+    ax.set_ylabel("Final adjusted cumulative regret")
+    ax.set_title("Self-exploration condition vs regret")
+    ax.legend(fontsize=8, framealpha=0.7)
+
+    # ── Right: histogram of min_eig ──────────────────────────────────
+    ax = axes[1]
+    n_bins = max(10, min(30, len(results) // 3))
+    ax.hist(
+        min_eigs,
+        bins=n_bins,
+        color="steelblue",
+        edgecolor="white",
+        linewidth=0.5,
+        alpha=0.85,
+    )
+    ax.axvline(
+        0, color="black", linestyle="--", linewidth=0.9, alpha=0.6,
+        label=r"$\lambda_{\min} = 0$",
+    )
+    ax.set_xlabel(r"$\lambda_{\min}(\mathbf{B}_\star^\top \mathbf{Q} \, \mathbf{B}_\star)$")
+    ax.set_ylabel("Count")
+    ax.set_title(r"Distribution of $\lambda_{\min}$ across seeds")
+    ax.legend(fontsize=8, framealpha=0.7)
+
+    fig.suptitle(
+        rf"Self-exploration diagnostics — "
+        rf"$d={exp_config.system.x_dim}$, $p={exp_config.system.u_dim}$, "
+        rf"$s={exp_config.system.sparsity}$, $N={{{len(results)}}}$ seeds",
+        fontsize=11,
+    )
+    fig.tight_layout()
+
+    if save_path:
+        if os.path.dirname(save_path):
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)

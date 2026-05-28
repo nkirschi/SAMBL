@@ -147,3 +147,19 @@ def episode_cost(
     state_cost = np.sum(X * (X @ Q.T), axis=1)
     control_cost = np.sum(U * (U @ R.T), axis=1)
     return float(np.sum((state_cost + control_cost) * dt))
+
+
+def self_exploration_metrics(
+    B: NDArray[np.float64],
+    Q: NDArray[np.float64],
+) -> dict[str, float]:
+    """
+    Eigenvalue metrics for the self-exploration matrix B^T Q B.
+
+    By Basei et al. (2022) Proposition 2.1(1), B^T Q B positive definite
+    is sufficient for identifiability of [A*, B*] under the optimal time-varying 
+    policy alone, for any T > 0.
+    """
+    BtQB = B.T @ Q @ B
+    eigvals = np.linalg.eigvalsh((BtQB + BtQB.T) / 2.0)
+    return {"min_eig": float(eigvals[0]), "max_eig": float(eigvals[-1])}

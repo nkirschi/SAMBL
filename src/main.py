@@ -27,9 +27,9 @@ import json
 import time
 import glob
 from collections import defaultdict
-
+import io
+from contextlib import redirect_stdout
 import yaml
-
 from common import ExperimentConfig
 from runner import run_paired_experiment
 from analysis import (
@@ -40,6 +40,7 @@ from analysis import (
     plot_basin_entry_comparison,
     plot_sparsity_evolution,
     plot_error_evolution,
+    plot_self_exploration_diagnostics,
     basin_entry_ratio,
     seed_wins,
 )
@@ -174,8 +175,9 @@ def report(
     verbose: bool = True,
 ) -> None:
     """
-    Pure reporting: analysis, JSON serialisation, and plots.
-    Does not run any simulation.
+    Pure reporting: analysis, JSON serialisation, plots, and summary text.
+    Does not run any simulation. Summary is always saved to summary.txt;
+    it is also printed to the console when verbose=True.
     """
     import numpy as np
 
@@ -183,8 +185,14 @@ def report(
     tests = all_pairwise_tests(results)
     _, median = basin_entry_ratio(results, threshold=exp_config.support_threshold)
 
-    if verbose:
-        print(f"Completed in {elapsed:.1f}s" if elapsed is not None else "")
+    min_eigs = [float(r.btqb_min_eig) for r in results]
+    max_eigs = [float(r.btqb_max_eig) for r in results]
+
+    # Capture summary into a buffer so it can be saved to file and printed.
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        if elapsed is not None:
+            print(f"Completed in {elapsed:.1f}s")
         print("\nFinal-episode summary:")
         print_summary(table)
         print("\nPaired tests:")
@@ -199,9 +207,32 @@ def report(
             for sp in [n for n in learning if n != "dense_greedy"]:
                 w = seed_wins(results, "dense_greedy", sp)
                 print(f"  Seed wins ({sp} < dense_greedy): {w}/{len(results)}")
+        print(f"\nSelf-exploration (B*\u1d40 Q B*):")
+        print(
+            f"  \u03bb_min : "
+            f"min={min(min_eigs):.4f}  "
+            f"median={float(np.median(min_eigs)):.4f}  "
+            f"max={max(min_eigs):.4f}"
+        )
+        print(
+            f"  \u03bb_max : "
+            f"min={min(max_eigs):.4f}  "
+            f"median={float(np.median(max_eigs)):.4f}  "
+            f"max={max(max_eigs):.4f}"
+        )
+
+    summary_text = buf.getvalue()
+
+    if verbose:
+        print(summary_text, end="")
 
     bench_dir = os.path.join(output_dir, name, time.strftime("%Y%m%d_%H%M%S"))
     os.makedirs(bench_dir, exist_ok=True)
+
+    # Save summary text — always, regardless of verbose, so every result
+    # folder is self-documenting even for quiet sweep reports.
+    with open(os.path.join(bench_dir, "summary.txt"), "w") as f:
+        f.write(summary_text)
 
     # Serialise config for reproducibility
     config_dict = {
@@ -230,6 +261,22 @@ def report(
             }
             for label, test_dict in tests.items()
         },
+        "system_diagnostics": {
+            "btqb_min_eig": {
+                "mean":     float(np.mean(min_eigs)),
+                "median":   float(np.median(min_eigs)),
+                "min":      float(min(min_eigs)),
+                "max":      float(max(min_eigs)),
+                "per_seed": [float(x) for x in min_eigs],
+            },
+            "btqb_max_eig": {
+                "mean":     float(np.mean(max_eigs)),
+                "median":   float(np.median(max_eigs)),
+                "min":      float(min(max_eigs)),
+                "max":      float(max(max_eigs)),
+                "per_seed": [float(x) for x in max_eigs],
+            },
+        },
         "basin_entry_median": float(median) if np.isfinite(median) else None,
         "elapsed_seconds": elapsed,
     }
@@ -241,6 +288,10 @@ def report(
     )
     plot_basin_entry_comparison(
         results, exp_config, save_path=os.path.join(bench_dir, "basin_entry.png")
+    )
+    plot_self_exploration_diagnostics(
+        results, exp_config,
+        save_path=os.path.join(bench_dir, "self_exploration.png"),
     )
     param_dir = os.path.join(bench_dir, "params_evolution")
     os.makedirs(param_dir, exist_ok=True)

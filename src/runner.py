@@ -20,6 +20,7 @@ from diagnostics import (
     restricted_gram_min_eigenvalue,
     closed_loop_spectral_abscissa,
     episode_cost,
+    self_exploration_metrics,
 )
 from common import ExperimentConfig
 
@@ -39,6 +40,8 @@ class SeedResult:
     A_star: np.ndarray = None
     B_star: np.ndarray = None
     supports: list = None
+    btqb_min_eig: float = 0.0
+    btqb_max_eig: float = 0.0
     episodes: Dict[str, List[EpisodeRecord]] = field(default_factory=dict)
 
     @property
@@ -150,6 +153,8 @@ def run_paired_experiment(
         A_star, B_star, exp_config.system.sigma, exp_config.system.dt
     )
 
+    btqb_metrics = self_exploration_metrics(B_star, Q)
+
     if verbose:
         print(f"Sampled system after {n_attempts} attempt(s)")
     noise_rng = np.random.default_rng(seed + 2_000_000)
@@ -180,6 +185,8 @@ def run_paired_experiment(
         A_star=A_star,
         B_star=B_star,
         supports=supports,
+        btqb_min_eig=btqb_metrics["min_eig"],
+        btqb_max_eig=btqb_metrics["max_eig"],
         episodes={n: [] for n in agents},
     )
     theta_true = np.concatenate([A_star, B_star], axis=1)
