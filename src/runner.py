@@ -198,7 +198,7 @@ def run_paired_experiment(
                 t = k * sys.dt
 
                 # Strict Phase Separation: Pure open-loop noise vs Closed-loop exploitation
-                if name != "oracle" and m < exp_config.m_explore:
+                if name in ["dense_greedy", "sparse_greedy"] and m < exp_config.m_explore:
                     u = shared_exploration[m, k]
                 else:
                     u = agent.get_control(t, x, rngs[name])
