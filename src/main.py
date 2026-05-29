@@ -38,8 +38,7 @@ from analysis import (
     print_summary,
     plot_trajectories,
     plot_basin_entry_comparison,
-    plot_sparsity_evolution,
-    plot_error_evolution,
+    plot_parameter_evolution,
     plot_self_exploration_diagnostics,
     basin_entry_ratio,
     seed_wins,
@@ -295,8 +294,7 @@ def report(
     )
     param_dir = os.path.join(bench_dir, "params_evolution")
     os.makedirs(param_dir, exist_ok=True)
-    plot_sparsity_evolution(results, exp_config, output_dir=param_dir)
-    plot_error_evolution(results, exp_config, output_dir=param_dir)
+    plot_parameter_evolution(results, exp_config, output_dir=param_dir)
 
     print(f"Results saved to {bench_dir}/")
 
