@@ -6,9 +6,9 @@
 #
 #SBATCH --partition=lrz-cpu
 #SBATCH --qos=cpu
-#SBATCH --time=0-00:30:00
-#SBATCH --mem=16GB
 #SBATCH --cpus-per-task=20
+#SBATCH --mem=16GB
+#SBATCH --time=0-00:30:00
 
 # Prevent each worker from spawning its own BLAS thread pool
 export OMP_NUM_THREADS=1
