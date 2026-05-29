@@ -376,9 +376,25 @@ def plot_trajectories(results, exp_config: ExperimentConfig, save_path=None):
 def plot_basin_entry_comparison(results, exp_config: ExperimentConfig, save_path=None):
     import matplotlib.pyplot as plt
 
-    ratios, median = basin_entry_ratio(
-        results, "dense_greedy", "sparse_greedy", threshold=0.15
-    )
+    available = set(results[0].agent_names) if results else set()
+    dense_name, sparse_name = "dense_greedy", "sparse_greedy"
+
+    if dense_name not in available or sparse_name not in available:
+        return
+
+    # Threshold = max of mean final parameter error across learning agents.
+    # This makes the basin entry ask "when did each agent first reach the accuracy
+    # level that the worst agent achieves at the end of training?"
+    learning_agents = [a for a in exp_config.agents if a != "oracle" and a in available]
+    final_errors = []
+    for name in learning_agents:
+        traj = aggregate_trajectory(results, name, "error_joint")
+        valid_finals = [float(v) for v in traj[:, -1] if np.isfinite(v)]
+        if valid_finals:
+            final_errors.append(float(np.mean(valid_finals)))
+    threshold = float(max(final_errors)) if final_errors else 0.3
+
+    ratios, median = basin_entry_ratio(results, dense_name, sparse_name, threshold=threshold)
     theoretical = exp_config.theoretical_speedup
 
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -391,7 +407,7 @@ def plot_basin_entry_comparison(results, exp_config: ExperimentConfig, save_path
     )
     ax.set_xlabel(r"$m_0^{\mathrm{dense}} / m_0^{\mathrm{sparse}}$")
     ax.set_ylabel("Count")
-    ax.set_title("Basin Entry Speedup Ratio")
+    ax.set_title(f"Basin Entry Speedup (threshold $\\epsilon={threshold:.3f}$)")
     ax.legend()
     plt.tight_layout()
 
@@ -448,93 +464,110 @@ def plot_sparsity_evolution(results, exp_config: ExperimentConfig, output_dir):
 
     d, p, M = exp_config.system.d, exp_config.system.p, exp_config.max_episodes
 
+    # Select the single seed with the highest mean support_f1_joint across
+    # learning agents at the final diagnostic episode.
+    best_idx, best_f1 = 0, -np.inf
+    for i, r in enumerate(results):
+        f1s = []
+        for name in LEARNING_AGENTS:
+            traj = r.diagnostic_trajectory(name, "support_f1_joint")
+            valid = [v for v in traj if np.isfinite(v)]
+            if valid:
+                f1s.append(valid[-1])
+        if f1s:
+            mean_f1 = float(np.mean(f1s))
+            if mean_f1 > best_f1:
+                best_f1 = mean_f1
+                best_idx = i
+    result = results[best_idx]
+
     n_checkpoints = min(8, M)
     checkpoint_episodes = sorted(
         set(np.round(np.linspace(0, M - 1, n_checkpoints)).astype(int).tolist())
     )
 
-    for result in results:
-        seed, A_true, B_true, supports = (
-            result.seed,
-            result.A_star,
-            result.B_star,
-            result.supports,
+    seed, A_true, B_true, supports = (
+        result.seed,
+        result.A_star,
+        result.B_star,
+        result.supports,
+    )
+    vmax = float(np.max(np.abs(np.hstack([A_true, B_true]))))
+
+    mask_A = _build_true_support_mask(d, p, supports, "A")
+    mask_B = _build_true_support_mask(d, p, supports, "B")
+
+    for block, true_mat, mask, ncols_matrix in [
+        ("A", A_true, mask_A, d),
+        ("B", B_true, mask_B, p),
+    ]:
+        n_cols, n_rows = 1 + len(checkpoint_episodes), len(LEARNING_AGENTS)
+        fig_w = min(n_cols * ncols_matrix * 0.35 + n_cols * 0.15 + 1.5, 28.0)
+        fig_h = min(n_rows * d * 0.35 + n_rows * 0.15 + 1.0, 20.0)
+
+        fig, axes = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(fig_w, fig_h),
+            squeeze=False,
+            constrained_layout=True,
         )
-        vmax = max(float(np.max(np.abs(np.hstack([A_true, B_true])))), 1.0)
+        col_titles = ["True"] + [f"Ep. {m + 1}" for m in checkpoint_episodes]
 
-        mask_A = _build_true_support_mask(d, p, supports, "A")
-        mask_B = _build_true_support_mask(d, p, supports, "B")
+        for row_idx, agent_name in enumerate(LEARNING_AGENTS):
+            for col_idx in range(n_cols):
+                ax = axes[row_idx, col_idx]
+                if col_idx == 0:
+                    mat = true_mat
+                else:
+                    ep = result.episodes[agent_name][checkpoint_episodes[col_idx - 1]]
+                    mat = ep.diagnostics.get(f"{block}_est", None)
+                    if mat is None:
+                        ax.set_visible(False)
+                        continue
 
-        for block, true_mat, mask, ncols_matrix in [
-            ("A", A_true, mask_A, d),
-            ("B", B_true, mask_B, p),
-        ]:
-            n_cols, n_rows = 1 + len(checkpoint_episodes), len(LEARNING_AGENTS)
-            fig_w = min(n_cols * ncols_matrix * 0.35 + n_cols * 0.15 + 1.5, 28.0)
-            fig_h = min(n_rows * d * 0.35 + n_rows * 0.15 + 1.0, 20.0)
+                ax.imshow(
+                    mat,
+                    vmin=-vmax,
+                    vmax=vmax,
+                    cmap="RdBu_r",
+                    aspect="auto",
+                    interpolation="nearest",
+                )
+                _draw_support_overlay(ax, mask)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.spines[:].set_visible(False)
 
-            fig, axes = plt.subplots(
-                n_rows,
-                n_cols,
-                figsize=(fig_w, fig_h),
-                squeeze=False,
-                constrained_layout=True,
-            )
-            col_titles = ["True"] + [f"Ep. {m + 1}" for m in checkpoint_episodes]
-
-            for row_idx, agent_name in enumerate(LEARNING_AGENTS):
-                for col_idx in range(n_cols):
-                    ax = axes[row_idx, col_idx]
-                    if col_idx == 0:
-                        mat = true_mat
-                    else:
-                        ep = result.episodes[agent_name][checkpoint_episodes[col_idx - 1]]
-                        mat = ep.diagnostics.get(f"{block}_est", None)
-                        if mat is None:
-                            ax.set_visible(False)
-                            continue
-
-                    ax.imshow(
-                        mat,
-                        vmin=-vmax,
-                        vmax=vmax,
-                        cmap="RdBu_r",
-                        aspect="auto",
-                        interpolation="nearest",
+                if row_idx == 0:
+                    ax.set_title(col_titles[col_idx], fontsize=8, pad=3)
+                if col_idx == 0:
+                    ax.set_ylabel(
+                        AGENT_LABELS[agent_name],
+                        fontsize=8,
+                        rotation=90,
+                        labelpad=4,
                     )
-                    _draw_support_overlay(ax, mask)
-                    ax.set_xticks([])
-                    ax.set_yticks([])
-                    ax.spines[:].set_visible(False)
 
-                    if row_idx == 0:
-                        ax.set_title(col_titles[col_idx], fontsize=8, pad=3)
-                    if col_idx == 0:
-                        ax.set_ylabel(
-                            AGENT_LABELS[agent_name],
-                            fontsize=8,
-                            rotation=90,
-                            labelpad=4,
-                        )
+        sm = plt.cm.ScalarMappable(
+            cmap="RdBu_r", norm=plt.Normalize(vmin=-vmax, vmax=vmax)
+        )
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=axes[:, -1], shrink=0.6, pad=0.02, aspect=20)
+        cbar.ax.tick_params(labelsize=7)
 
-            sm = plt.cm.ScalarMappable(
-                cmap="RdBu_r", norm=plt.Normalize(vmin=-vmax, vmax=vmax)
-            )
-            sm.set_array([])
-            cbar = fig.colorbar(sm, ax=axes[:, -1], shrink=0.6, pad=0.02, aspect=20)
-            cbar.ax.tick_params(labelsize=7)
-
-            fig.suptitle(
-                f"{block} block — seed {seed} — d={d}, p={p}, s={exp_config.system.sparsity}, M={M}",
-                fontsize=9,
-                y=1.01,
-            )
-            fig.savefig(
-                os.path.join(output_dir, f"params_{block}_seed{seed}.png"),
-                dpi=120,
-                bbox_inches="tight",
-            )
-            plt.close(fig)
+        fig.suptitle(
+            f"{block} block, best seed (seed={seed}, F1={best_f1:.3f}) — "
+            f"d={d}, p={p}, s={exp_config.system.sparsity}, M={M}",
+            fontsize=9,
+            y=1.01,
+        )
+        fig.savefig(
+            os.path.join(output_dir, f"params_{block}.png"),
+            dpi=120,
+            bbox_inches="tight",
+        )
+        plt.close(fig)
 
 
 def plot_error_evolution(results, exp_config: ExperimentConfig, output_dir):
