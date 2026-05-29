@@ -4,8 +4,8 @@ name: d50
 system:
   d: 50
   p: 13
-  s_A: 4
-  s_B: 2
+  s_A: 2
+  s_B: 1
   a_min: 0.1
   a_max: 1.9
   b_min: 0.1
