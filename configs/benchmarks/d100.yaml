@@ -34,7 +34,8 @@ agents:
   - sparse_excited
 
 estimation:
-  lambda_lasso: 0.08
+  lambda_lasso: null
+  c_lambda: 0.02
   delta: 0.05
   mu_ridge: 0.0
   lasso_max_iter: 5000
