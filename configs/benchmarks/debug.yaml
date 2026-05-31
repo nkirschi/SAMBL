@@ -37,7 +37,7 @@ estimation:
   lambda_lasso: null
   c_lambda: 0.02
   delta: 0.05
-  mu_ridge: 1e-6
+  mu_ridge: 1.0e-6
   lasso_max_iter: 5000
   lasso_tol: 1.0e-4
 
