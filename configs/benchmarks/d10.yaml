@@ -10,7 +10,6 @@ system:
   a_max: 1.9
   b_min: 0.1
   b_max: 1.9
-  max_instability: 1.0
 
 simulation:
   T: 1.0
