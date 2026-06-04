@@ -1,8 +1,8 @@
 #!/bin/sh
 #
 #SBATCH -J sectrl
-#SBATCH --output=/dss/dsshome1/07/go69lir/SECTRL/slurm/stdout/sectrl.%j.out
-#SBATCH --error=/dss/dsshome1/07/go69lir/SECTRL/slurm/stderr/sectrl.%j.err
+#SBATCH --output=/dss/dsshome1/07/go69lir/SECTRL/slurm/sectrl.%j.out
+#SBATCH --error=/dss/dsshome1/07/go69lir/SECTRL/slurm/sectrl.%j.err
 #
 #SBATCH --partition=lrz-cpu
 #SBATCH --qos=cpu
