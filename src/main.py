@@ -120,7 +120,7 @@ def _run_sequential(exp_config: ExperimentConfig, verbose: bool = False) -> list
     for i, seed in enumerate(seeds):
         if verbose:
             print(f"Seed {i + 1}/{len(seeds)} (seed={seed})")
-        results.append(run_paired_experiment(exp_config, seed))
+        results.append(run_paired_experiment(exp_config, seed, verbose))
     return results
 
 
@@ -289,7 +289,8 @@ def report(
         results, exp_config, save_path=os.path.join(bench_dir, "basin_entry.png")
     )
     plot_self_exploration_diagnostics(
-        results, exp_config,
+        results,
+        exp_config,
         save_path=os.path.join(bench_dir, "self_exploration.png"),
     )
     param_dir = os.path.join(bench_dir, "params_evolution")
