@@ -156,15 +156,18 @@ def run_paired_experiment(
 
     explore_rng = np.random.default_rng(seed + 3_000_000)
     shared_exploration = (
-        explore_rng.standard_normal((exp_config.m_explore, H, p))
+        explore_rng.standard_normal((int(np.ceil(exp_config.m_explore)), H, p))
         * exp_config.system.sigma
     )
+    exploration_steps = H * exp_config.m_explore
+    if verbose:
+        print(f"Pure exploration for {exploration_steps} initial steps")
 
     x0_rng = np.random.default_rng(seed + 4_000_000)
     x0s = x0_rng.standard_normal((M, d)) * exp_config.x0_std
 
     A_0 = -np.eye(d)
-    B_0 = np.eye(d)[:, :p]
+    B_0 = np.eye(d, p)
     agents = {
         name: _build_agent(name, exp_config, A_star, B_star, A_0, B_0, Q, R)
         for name in exp_config.agents
@@ -200,9 +203,13 @@ def run_paired_experiment(
 
             for k in range(H):
                 t = k * sys.dt
+                current_step = m * H + k
 
-                # Strict Phase Separation: Pure open-loop noise vs Closed-loop exploitation
-                if name in ["dense_greedy", "sparse_greedy"] and m < exp_config.m_explore:
+                # initial pure exploration for greedy agents
+                if (
+                    name in ["dense_greedy", "sparse_greedy"]
+                    and current_step < exploration_steps
+                ):
                     u = shared_exploration[m, k]
                 else:
                     u = agent.get_control(t, x, rngs[name])

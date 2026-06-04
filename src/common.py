@@ -62,7 +62,7 @@ class ExperimentConfig:
     n_seeds: int
     agents: tuple[str, ...]
     x0_std: float
-    m_explore: int
+    m_explore: float
     action_clip: float
     state_clip: float
     support_threshold: float
@@ -141,7 +141,7 @@ class ExperimentConfig:
             n_seeds=train.get("n_seeds", 50),
             agents=tuple(agents),
             x0_std=sim.get("x0_std", 0.0),
-            m_explore=train.get("m_explore", 0),
+            m_explore=train.get("m_explore", 0.0),
             action_clip=sim.get("action_clip", 10.0),
             state_clip=sim.get("state_clip", 100.0),
             support_threshold=est.get("support_threshold", 0.05),
