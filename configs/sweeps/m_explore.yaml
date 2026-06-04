@@ -1,0 +1,9 @@
+base: d10
+vary:
+  - {m_explore: 1.0}
+  - {m_explore: 0.5}
+  - {m_explore: 0.25}
+  - {m_explore: 0.1}
+  - {m_explore: 0.05}
+  - {m_explore: 0.025}
+  - {m_explore: 0.0}
