@@ -61,13 +61,15 @@ def _build_agent(
     exp_config: ExperimentConfig,
     A_true: np.ndarray,
     B_true: np.ndarray,
+    A_0: np.ndarray,
+    B_0: np.ndarray,
     Q: np.ndarray,
     R: np.ndarray,
 ) -> LinearControlAgent:
     """Instantiate agents by name."""
     d, p = exp_config.system.d, exp_config.system.p
     planner = RiccatiODESolver(exp_config.system, Q, R)
-    prior_theta = np.concatenate([-np.eye(d), np.zeros((d, p))], axis=1)
+    prior_theta = np.concatenate([A_0, B_0], axis=1)
 
     if name == "oracle":
         planner.solve(A_true, B_true)
@@ -138,6 +140,8 @@ def run_paired_experiment(
         b_min=exp_config.system.b_min,
         b_max=exp_config.system.b_max,
     )
+    if verbose:
+        print(f"Sampled system after {n_attempts} attempt(s)")
 
     Q = np.eye(d) * exp_config.cost.q_scale
     R = np.eye(p) * exp_config.cost.r_scale
@@ -147,8 +151,6 @@ def run_paired_experiment(
 
     btqb_metrics = self_exploration_metrics(B_star, Q)
 
-    if verbose:
-        print(f"Sampled system after {n_attempts} attempt(s)")
     noise_rng = np.random.default_rng(seed + 2_000_000)
     shared_noise = noise_rng.standard_normal((M, H, d))
 
@@ -161,8 +163,10 @@ def run_paired_experiment(
     x0_rng = np.random.default_rng(seed + 4_000_000)
     x0s = x0_rng.standard_normal((M, d)) * exp_config.x0_std
 
+    A_0 = -np.eye(d)
+    B_0 = np.eye(d)[:, :p]
     agents = {
-        name: _build_agent(name, exp_config, A_star, B_star, Q, R)
+        name: _build_agent(name, exp_config, A_star, B_star, A_0, B_0, Q, R)
         for name in exp_config.agents
     }
     buffers = {
@@ -246,8 +250,6 @@ def run_paired_experiment(
                     diag["A_est"] = agent.A_hat.copy()
                     diag["B_est"] = agent.B_hat.copy()
 
-            result.episodes[name].append(
-                EpisodeRecord(cost=cost, diagnostics=diag)
-            )
+            result.episodes[name].append(EpisodeRecord(cost=cost, diagnostics=diag))
 
     return result
