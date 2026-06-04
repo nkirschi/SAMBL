@@ -22,8 +22,8 @@ cost:
   r_scale: 1.0
 
 training:
-  max_episodes: 10
-  n_seeds: 3
+  max_episodes: 20
+  n_seeds: 10
   m_explore: 1
 
 agents:
