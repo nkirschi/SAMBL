@@ -178,8 +178,6 @@ def run_paired_experiment(
     A_0 = -a_scale * np.eye(d)
     B_0 = b_scale * np.eye(d, p)
 
-    A_0 = -np.eye(d)
-    B_0 = np.eye(d, p)
     agents = {
         name: _build_agent(name, exp_config, A_star, B_star, A_0, B_0, Q, R)
         for name in exp_config.agents
