@@ -166,6 +166,18 @@ def run_paired_experiment(
     x0_rng = np.random.default_rng(seed + 4_000_000)
     x0s = x0_rng.standard_normal((M, d)) * exp_config.x0_std
 
+    def rms_scale(c_min: float, c_max: float, sparsity: int) -> float:
+        return np.sqrt(sparsity * (c_min**2 + c_min * c_max + c_max**2) / 3)
+
+    a_scale = rms_scale(
+        exp_config.system.a_min, exp_config.system.a_max, exp_config.system.s_A
+    )
+    b_scale = rms_scale(
+        exp_config.system.b_min, exp_config.system.b_max, exp_config.system.s_B
+    )
+    A_0 = -a_scale * np.eye(d)
+    B_0 = b_scale * np.eye(d, p)
+
     A_0 = -np.eye(d)
     B_0 = np.eye(d, p)
     agents = {
