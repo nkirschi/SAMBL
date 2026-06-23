@@ -1,8 +1,11 @@
 import numpy as np
 import pytest
+from scipy.integrate import solve_ivp
+from scipy.linalg import solve_continuous_are
 
 from common import SystemConfig
 from planner import RiccatiODESolver
+from system_generator import sample_sparse_system
 
 @pytest.fixture
 def config():
@@ -71,3 +74,117 @@ def test_case_3_damped(config):
         P_exact = 2.0 / (3.0 * np.exp(2 * tau) - 1.0)
 
         assert P_numeric == pytest.approx(P_exact, abs=1e-6)
+
+# ---------------------------------------------------------------------------
+# Solver accuracy on representative sparse systems.
+#
+# The production solver integrates the RDE with explicit DOP853 (Radau as a
+# stiff fallback). These tests pin its accuracy against an independent tight-
+# tolerance integration and against the algebraic Riccati (CARE) limit, and
+# check that the DOP853 and Radau paths agree.
+# ---------------------------------------------------------------------------
+
+
+def _representative(d, p, seed):
+    A, B, _, _ = sample_sparse_system(
+        d=d, p=p, s_A=min(4, d), s_B=min(2, p), seed=seed,
+        a_min=0.1, a_max=1.9, b_min=0.1, b_max=1.9,
+    )
+    return A, B, np.eye(d), np.eye(p)
+
+
+def _config(d, p, dt=0.025, T=1.0):
+    return SystemConfig(
+        d=d, p=p, s_A=min(4, d), s_B=min(2, p),
+        a_min=0.1, a_max=1.9, b_min=0.1, b_max=1.9, sigma=1.0, dt=dt, T=T,
+    )
+
+
+def _reference_grid(A, B, Q, R, T, dt, H):
+    """Independent ground truth: tight Radau integration of the RDE."""
+    d = A.shape[0]
+    S = B @ np.linalg.solve(R, B.T)
+
+    def rhs(_, p_flat):
+        P = p_flat.reshape(d, d)
+        return (A.T @ P + P @ A - P @ S @ P + Q).ravel()
+
+    sol = solve_ivp(
+        rhs, [0, T], np.zeros(d * d), method="Radau",
+        rtol=1e-12, atol=1e-14, dense_output=True,
+    )
+    assert sol.success
+    return np.stack([sol.sol(j * dt).reshape(d, d) for j in range(H + 1)])
+
+
+def _rel_fro(P, P_ref):
+    num = np.linalg.norm(P - P_ref, axis=(1, 2))
+    den = np.maximum(np.linalg.norm(P_ref, axis=(1, 2)), 1e-300)
+    return float(np.max(num / den))
+
+
+@pytest.mark.parametrize("d,p", [(5, 2), (10, 3), (20, 5)])
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_solver_matches_tight_reference(d, p, seed):
+    """Production (DOP853) P-grid matches a tight independent integrator."""
+    cfg = _config(d, p)
+    A, B, Q, R = _representative(d, p, seed)
+
+    solver = RiccatiODESolver(cfg, Q, R)
+    assert solver.solve(A, B)
+
+    ref = _reference_grid(A, B, Q, R, cfg.T, cfg.dt, cfg.H)
+    assert _rel_fro(solver._P_grid, ref) < 1e-6
+
+
+@pytest.mark.parametrize("d,p", [(5, 2), (10, 3), (20, 5)])
+def test_solution_symmetric_and_psd(d, p):
+    cfg = _config(d, p)
+    A, B, Q, R = _representative(d, p, seed=0)
+    solver = RiccatiODESolver(cfg, Q, R)
+    assert solver.solve(A, B)
+
+    for P in solver._P_grid:
+        assert np.linalg.norm(P - P.T) < 1e-10
+        assert np.linalg.eigvalsh(P)[0] > -1e-9
+
+
+@pytest.mark.parametrize("d,p", [(6, 2), (10, 3)])
+def test_care_limit(d, p):
+    """At a long horizon, P(0) converges to the algebraic Riccati solution."""
+    cfg = _config(d, p, dt=0.05, T=60.0)
+    A, B, Q, R = _representative(d, p, seed=0)
+    solver = RiccatiODESolver(cfg, Q, R)
+    assert solver.solve(A, B)
+
+    P0 = solver._P_grid[cfg.H]  # tau = T  (physics time t = 0)
+    P_care = solve_continuous_are(A, B, Q, R)
+    assert np.linalg.norm(P0 - P_care) / np.linalg.norm(P_care) < 1e-5
+
+
+def test_dop853_matches_radau_fallback():
+    """The primary (DOP853) and stiff-fallback (Radau) paths agree."""
+    cfg = _config(10, 3)
+    A, B, Q, R = _representative(10, 3, seed=0)
+    solver = RiccatiODESolver(cfg, Q, R)
+    S = B @ np.linalg.solve(R, B.T)
+
+    dop = solver._integrate(A, S, None, "DOP853")
+    radau = solver._integrate(A, S, None, "Radau")
+    assert dop is not None and radau is not None
+    assert _rel_fro(dop, radau) < 1e-6
+
+
+def test_get_K_interpolates_off_grid():
+    """get_K is exact on grid points and continuous between them."""
+    cfg = _config(5, 2)
+    A, B, Q, R = _representative(5, 2, seed=0)
+    solver = RiccatiODESolver(cfg, Q, R)
+    assert solver.solve(A, B)
+
+    # midpoint of the first interval should sit between the two grid gains
+    k0 = solver.get_K(0.0, B)
+    k_half = solver.get_K(0.5 * cfg.dt, B)
+    k1 = solver.get_K(cfg.dt, B)
+    assert np.all((k_half <= np.maximum(k0, k1) + 1e-12))
+    assert np.all((k_half >= np.minimum(k0, k1) - 1e-12))
