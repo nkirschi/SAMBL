@@ -77,7 +77,7 @@ def sample_sparse_system(
 def _is_stabilisable(
     A: NDArray[np.float64],
     B: NDArray[np.float64],
-    tol: float = 1e-8,
+    rtol: float = 1e-8,
 ) -> bool:
     """
     Check stabilisability via the Hautus lemma.
@@ -94,7 +94,7 @@ def _is_stabilisable(
     for lam in eigenvalues:
         if np.real(lam) >= 0:
             block = np.hstack([lam * np.eye(d) - A, B])
-            if np.linalg.matrix_rank(block, tol=tol) < d:
+            if np.linalg.matrix_rank(block, rtol=rtol) < d:
                 return False
     return True
 
@@ -102,7 +102,7 @@ def _is_stabilisable(
 def _is_controllable(
     A: NDArray[np.float64],
     B: NDArray[np.float64],
-    tol: float = 1e-8,
+    rtol: float = 1e-8,
 ) -> bool:
     """
     Check controllability via the Hautus lemma.
@@ -118,6 +118,6 @@ def _is_controllable(
     eigenvalues = np.linalg.eigvals(A)
     for lam in eigenvalues:
         block = np.hstack([lam * np.eye(d) - A, B])
-        if np.linalg.matrix_rank(block, tol=tol) < d:
+        if np.linalg.matrix_rank(block, rtol=rtol) < d:
             return False
     return True
