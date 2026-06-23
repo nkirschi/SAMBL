@@ -11,7 +11,6 @@ def config_dt():
 def config_T():
     return 10.0
 
-@pytest.mark.quick
 def test_deterministic_dynamics(config_dt, config_T):
     """
     Verify that with sigma=0, the system evolves exactly as a deterministic Euler step.
@@ -45,7 +44,6 @@ def test_deterministic_dynamics(config_dt, config_T):
         err_msg="Simulation trajectory diverged from analytical resonance solution",
     )
 
-@pytest.mark.quick
 def test_stochastic_scaling(config_dt):
     """
     Verify that noise scales correctly with sqrt(dt).

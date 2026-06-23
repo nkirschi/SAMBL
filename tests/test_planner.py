@@ -13,7 +13,6 @@ def config():
         d=1, p=1, s_A=1, s_B=1, a_min=0.1, a_max=1.9, b_min=0.1, b_max=1.9, sigma=1.0, dt=0.01, T=5.0
     )
 
-@pytest.mark.quick
 def test_case_1_tanh(config):
     """
     Case 1: Standard LQR (Zero Terminal Cost)
@@ -30,7 +29,6 @@ def test_case_1_tanh(config):
 
         assert P_numeric == pytest.approx(P_exact, abs=1e-6)
 
-@pytest.mark.quick
 def test_case_2_rational(config):
     """
     Case 2: Energy Saver (High Terminal Cost)
@@ -51,7 +49,6 @@ def test_case_2_rational(config):
 
         assert P_numeric == pytest.approx(P_exact, abs=1e-6)
 
-@pytest.mark.quick
 def test_case_3_damped(config):
     """
     Case 3: Damped Regulator

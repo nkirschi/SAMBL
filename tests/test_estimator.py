@@ -45,7 +45,6 @@ def synthetic_data(default_dims):
     
     return zs, ys, Theta_true
 
-@pytest.mark.quick
 def test_ridge_estimator_perfect_recovery(default_dims, configs, synthetic_data):
     _, est_cfg = configs
     d, p = default_dims["d"], default_dims["p"]
@@ -61,7 +60,6 @@ def test_ridge_estimator_perfect_recovery(default_dims, configs, synthetic_data)
     np.testing.assert_allclose(Theta_hat, Theta_true, atol=1e-6)
 
 
-@pytest.mark.quick
 def test_lasso_estimator_sparse_recovery(default_dims, configs, synthetic_data):
     sys_cfg, _ = configs
     est_cfg = EstimatorConfig(
@@ -85,7 +83,6 @@ def test_lasso_estimator_sparse_recovery(default_dims, configs, synthetic_data):
     assert Theta_hat[0, 1] == 0.0
     assert Theta_hat[2, 0] == 0.0
 
-@pytest.mark.quick
 def test_lasso_warm_starting(default_dims, configs, synthetic_data):
     sys_cfg, _ = configs
     est_cfg = EstimatorConfig(
@@ -108,7 +105,6 @@ def test_lasso_warm_starting(default_dims, configs, synthetic_data):
     np.testing.assert_allclose(est._coef, Theta_hat)
 
 
-@pytest.mark.quick
 def test_lasso_streaming_matches_full_fit(default_dims, configs):
     """
     The incremental estimator must reproduce, episode by episode, what a
@@ -152,7 +148,6 @@ def test_lasso_streaming_matches_full_fit(default_dims, configs):
         np.testing.assert_allclose(theta_stream, theta_ref, atol=1e-7)
 
 
-@pytest.mark.quick
 def test_lasso_warmup_first_fit_only(default_dims, configs):
     """
     The first scheduled fit uses the small warmup penalty (so a weak initial
