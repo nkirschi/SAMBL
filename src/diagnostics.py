@@ -88,17 +88,23 @@ def support_metrics(
 
 # TODO: consider sampling from cones and reporting min Rayleigh coefficient
 def restricted_gram_min_eigenvalue(
-    Z: NDArray[np.float64], true_supports: List[Set[int]]
+    gram: NDArray[np.float64] | None,
+    n_samples: int,
+    true_supports: List[Set[int]],
 ) -> float:
     """
     Minimum eigenvalue of the empirical gram matrix restricted to each row's
     true support, then the minimum over rows.
 
+    `gram` is the unnormalised accumulated design Gram Z^T Z and `n_samples` the
+    number of rows in Z; the normalised restricted block is gram[S, S] / n_samples.
+    Slicing the precomputed Gram is O(s^2) per row, versus O(N s^2) to recompute
+    from raw Z -- the difference matters at large support size s.
+
     This is an upper bound on the restricted eigenvalue constant kappa.
     Hence, it can be used as a necessary condition for Lasso recovery.
     """
-    N = Z.shape[0]
-    if N == 0:
+    if gram is None or n_samples == 0:
         return 0.0
 
     min_eig = np.inf
@@ -106,9 +112,8 @@ def restricted_gram_min_eigenvalue(
         cols = sorted(supp)
         if not cols:
             continue
-        Z_S = Z[:, cols]
-        gram = (Z_S.T @ Z_S) / N
-        min_eig = min(min_eig, float(np.min(np.linalg.eigvalsh((gram + gram.T) / 2.0))))
+        sub = gram[np.ix_(cols, cols)] / n_samples
+        min_eig = min(min_eig, float(np.min(np.linalg.eigvalsh((sub + sub.T) / 2.0))))
 
     return min_eig if np.isfinite(min_eig) else 0.0
 

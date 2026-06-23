@@ -57,6 +57,11 @@ class DiscreteRidgeEstimator:
         self._rhs: NDArray[np.float64] | None = None  # Z^T Y
         self._n_seen: int = 0
 
+    @property
+    def gram(self) -> NDArray[np.float64] | None:
+        """Accumulated unnormalised design Gram Z^T Z (None before the first fit)."""
+        return self._gram
+
     def fit(
         self, z_data: NDArray[np.float64], y_data: NDArray[np.float64]
     ) -> NDArray[np.float64]:
@@ -127,6 +132,11 @@ class RowLassoEstimator:
         # Warm-start coefficients carried across episodes (one row each).
         self._coef = np.zeros((self.x_dim, self.z_dim), dtype=np.float64)
         self._rng = np.random.RandomState(0)  # required by the Cython CD (cyclic)
+
+    @property
+    def gram(self) -> NDArray[np.float64]:
+        """Accumulated unnormalised design Gram Z^T Z."""
+        return self._gram
 
     def fit(
         self, z_data: NDArray[np.float64], y_data: NDArray[np.float64]

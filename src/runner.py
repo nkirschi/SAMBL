@@ -269,7 +269,7 @@ def run_paired_experiment(
                         "support_f1_B": sup["B"]["f1"],
                         "episode_cost": cost,
                         "gram_min_eig": restricted_gram_min_eigenvalue(
-                            buffers[name].Z, supports
+                            agent.estimator.gram, buffers[name].N, supports
                         ),
                         "spectral_abscissa_t0": closed_loop_spectral_abscissa(
                             A_star, B_star, agent.planner.get_K(0.0, agent.B_hat)

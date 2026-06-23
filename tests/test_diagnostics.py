@@ -93,7 +93,7 @@ class TestRestrictedGramMinEigenvalue:
         Z = Z @ np.linalg.inv(L.T)
         
         true_supports = [{0, 1}, {1, 2}]
-        min_eig = restricted_gram_min_eigenvalue(Z, true_supports)
+        min_eig = restricted_gram_min_eigenvalue(Z.T @ Z, N, true_supports)
         assert min_eig == pytest.approx(1.0, abs=1e-10)
 
     def test_singular_columns_give_near_zero(self):
@@ -103,7 +103,7 @@ class TestRestrictedGramMinEigenvalue:
         Z[:, 1] = Z[:, 0]
         
         true_supports = [{0, 1}, {2}]
-        min_eig = restricted_gram_min_eigenvalue(Z, true_supports)
+        min_eig = restricted_gram_min_eigenvalue(Z.T @ Z, N, true_supports)
         assert min_eig == pytest.approx(0.0)
 
 class TestClosedLoopSpectralAbscissa:
