@@ -12,13 +12,16 @@ Usage:
 """
 
 import os
-import sys
 
-# Avoid multithreading in numpy for cleaner parallelism
-if any(a.startswith("--n-workers") for a in sys.argv[1:]):
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
-    os.environ.setdefault("MKL_NUM_THREADS", "1")
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+# Force single-threaded BLAS (must run before numpy is imported anywhere).
+# This is a small-matrix-heavy workload (25x25 cho_solve, 100x100 RDE RHS),
+# parallelised across seeds at the process level. Multi-threaded BLAS only adds
+# thread-launch overhead here -- measured ~4x slowdown at d=100 -- so we always
+# pin one thread and get parallelism from --n-workers instead. setdefault lets
+# an explicit external override still win.
+for _v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
 
 import argparse
 import dataclasses
