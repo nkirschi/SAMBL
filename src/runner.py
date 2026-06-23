@@ -74,7 +74,10 @@ def _build_agent(
     prior_theta = np.concatenate([A_0, B_0], axis=1)
 
     if name == "oracle":
-        planner.solve(A_true, B_true)
+        if not planner.solve(A_true, B_true):
+            raise RuntimeError(
+                "Oracle Riccati solve failed: sampled system too stiff/ill-conditioned. "
+            )
         return LinearControlAgent(
             name,
             np.concatenate([A_true, B_true], axis=1),

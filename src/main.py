@@ -140,8 +140,8 @@ def _run_parallel(
     Run a list of (name, config, seed) tasks across a worker pool.
 
     Returns {name: [SeedResult, ...]} with each list sorted by seed.
-    Individual failures are caught and reported; a summary error is raised
-    after all futures settle so one bad seed does not discard others.
+    Individual failures are caught and reported but non-fatal: the successful
+    results are still returned so one bad seed does not discard the others.
     """
     from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -156,14 +156,22 @@ def _run_parallel(
         for future in as_completed(futures):
             name, seed = futures[future]
             try:
-                grouped[name].append(future.result())
+                result = future.result()
             except Exception as exc:
                 errors.append((name, seed, exc))
                 print(f"Error: seed {seed} of '{name}' failed: {exc}")
+                continue
+            grouped[name].append(result)
 
     if errors:
         summary = ", ".join(f"{name}[{seed}]" for name, seed, _ in errors)
-        raise RuntimeError(f"{len(errors)} task(s) failed: {summary}")
+        n_ok = sum(len(v) for v in grouped.values())
+        # Report failures loudly but do not discard the successful seeds: return
+        # them so the caller can still persist and plot what completed.
+        print(
+            f"\n!! {len(errors)} task(s) failed: {summary}\n"
+            f"   Continuing with the {n_ok} successful result(s).\n"
+        )
 
     return {
         name: sorted(results, key=lambda r: r.seed) for name, results in grouped.items()
@@ -454,6 +462,9 @@ def main():
         print(f"Completed in {elapsed:.1f}s")
         t0 = time.time()
         for name, cfg in configs.items():
+            if not grouped.get(name):
+                print(f"Skipping report for '{name}': all seeds failed.")
+                continue
             report(name, cfg, grouped[name], sweep_dir, verbose=False)
         print(f"Completed in {time.time() - t0:.1f}s")
 
