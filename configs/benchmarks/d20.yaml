@@ -24,7 +24,7 @@ cost:
 training:
   max_episodes: 200
   n_seeds: 20
-  m_explore: 1
+  m_explore: 0
 
 agents:
   - oracle
