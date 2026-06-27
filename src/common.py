@@ -10,13 +10,19 @@ class SystemConfig:
     p: int
     s_A: int
     s_B: int
+    sigma: float
+    dt: float
+    T: float
     a_min: float
     a_max: float
     b_min: float
     b_max: float
-    sigma: float
-    dt: float
-    T: float
+    family: str = "synthetic"
+    k_min: float = 0.5   # spring stiffness range
+    k_max: float = 2.0
+    m_min: float = 0.5   # mass range
+    m_max: float = 1.5
+    normalise_B: bool = True
 
     @property
     def H(self) -> int:
@@ -102,13 +108,19 @@ class ExperimentConfig:
             p=sys["p"],
             s_A=sys["s_A"],
             s_B=sys["s_B"],
-            a_min=sys["a_min"],
-            a_max=sys["a_max"],
-            b_min=sys["b_min"],
-            b_max=sys["b_max"],
             sigma=sim["sigma"],
             dt=sim["dt"],
             T=sim["T"],
+            family=sys.get("family", "synthetic"),
+            a_min=sys.get("a_min", 0.1),
+            a_max=sys.get("a_max", 1.9),
+            b_min=sys.get("b_min", 0.1),
+            b_max=sys.get("b_max", 1.9),
+            k_min=sys.get("k_min", 0.5),
+            k_max=sys.get("k_max", 2.0),
+            m_min=sys.get("m_min", 0.5),
+            m_max=sys.get("m_max", 1.5),
+            normalise_B=bool(sys.get("normalise_B", True)),
         )
 
         cost_cfg = CostConfig(

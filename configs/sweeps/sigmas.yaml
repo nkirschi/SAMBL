@@ -1,4 +1,4 @@
-base: d10
+base: synthetic_d10
 vary:
   - {sigma: 0.25, sigma_u: 0.25}
   - {sigma: 0.25, sigma_u: 0.5}

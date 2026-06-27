@@ -1,30 +1,30 @@
-# quick debugging run
-name: debug
+# Spring-mass chain benchmark: d=20 -> n=10 masses, p=5 actuators (half), s=3 (banded)
+name: springs_d20
 
 system:
-  family: synthetic
-  d: 10
-  p: 3
-  s_A: 2
+  family: spring_chain
+  d: 20          # = 2n
+  p: 5           # actuators = n/2 (p/d = 1/4)
+  s_A: 3         # max velocity-row A-sparsity (nearest-neighbour band)
   s_B: 1
-  a_min: 0.1
-  a_max: 1.9
-  b_min: 0.1
-  b_max: 1.9
+  k_min: 0.5
+  k_max: 2.0
+  m_min: 0.5
+  m_max: 1.5
 
 simulation:
   T: 1.0
   dt: 0.02
   sigma: 0.3
-  x0_std: 0.0
+  x0_std: 1.0
 
 cost:
   q_scale: 1.0
   r_scale: 1.0
 
 training:
-  max_episodes: 20
-  n_seeds: 10
+  max_episodes: 200
+  n_seeds: 25
   m_explore: 0
 
 agents:

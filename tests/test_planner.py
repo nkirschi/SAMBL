@@ -5,7 +5,7 @@ from scipy.linalg import solve_continuous_are
 
 from common import SystemConfig
 from planner import RiccatiODESolver
-from system_generator import sample_sparse_system
+from system_generator import sample_synthetic_system
 
 @pytest.fixture
 def config():
@@ -83,7 +83,7 @@ def test_case_3_damped(config):
 
 
 def _representative(d, p, seed):
-    A, B, _, _ = sample_sparse_system(
+    A, B, _, _ = sample_synthetic_system(
         d=d, p=p, s_A=min(4, d), s_B=min(2, p), seed=seed,
         a_min=0.1, a_max=1.9, b_min=0.1, b_max=1.9,
     )

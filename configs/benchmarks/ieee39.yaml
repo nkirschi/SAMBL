@@ -1,0 +1,43 @@
+# IEEE 39-bus (New England) power grid anchor: swing-oscillator network,
+# d=78 (39 buses x [angle, frequency]), p=9 generators actuated, s<=7 (3.2% dense).
+name: ieee39
+
+system:
+  family: ieee39
+  d: 78          # = 2 x 39 buses
+  p: 9           # 9 New England generators (30-38); bus 39 = unactuated reference
+  s_A: 7         # max frequency-row sparsity (max bus degree + 2)
+  s_B: 1
+
+simulation:
+  T: 1.0
+  dt: 0.02
+  sigma: 0.3
+  x0_std: 1.0
+
+cost:
+  q_scale: 1.0
+  r_scale: 1.0
+
+training:
+  max_episodes: 200
+  n_seeds: 25
+  m_explore: 0
+
+agents:
+  - oracle
+  - dense_greedy
+  - dense_excited
+  - sparse_greedy
+  - sparse_excited
+
+estimation:
+  lambda_lasso: null
+  c_lambda: 0.02
+  delta: 0.05
+  mu_ridge: 1.0e-6
+  lasso_max_iter: 10000
+  lasso_tol: 1.0e-4
+
+excitation:
+  sigma_u: 0.05

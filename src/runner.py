@@ -13,7 +13,7 @@ from typing import Dict, List
 
 from dynamics import ContinuousLQREnv
 from estimator import RegressionBuffer, DiscreteRidgeEstimator, RowLassoEstimator
-from system_generator import sample_sparse_system
+from system_generator import sample_synthetic_system, sample_spring_chain, sample_ieee39
 from planner import RiccatiODESolver
 from agent import LinearControlAgent
 from diagnostics import (
@@ -112,14 +112,18 @@ def _build_agent(
     use_warmup = exp_config.m_explore == 0
     if name == "sparse_greedy":
         est = RowLassoEstimator(
-            exp_config.system, exp_config.estimators,
-            exp_config.theoretical_lambda, use_warmup=use_warmup,
+            exp_config.system,
+            exp_config.estimators,
+            exp_config.theoretical_lambda,
+            use_warmup=use_warmup,
         )
         return LinearControlAgent(name, prior_theta.copy(), d, p, Q, R, est, planner)
     if name == "sparse_excited":
         est = RowLassoEstimator(
-            exp_config.system, exp_config.estimators,
-            exp_config.theoretical_lambda, use_warmup=use_warmup,
+            exp_config.system,
+            exp_config.estimators,
+            exp_config.theoretical_lambda,
+            use_warmup=use_warmup,
         )
         return LinearControlAgent(
             name,
@@ -142,17 +146,34 @@ def run_paired_experiment(
     d, p = exp_config.system.d, exp_config.system.p
     M, H = exp_config.max_episodes, exp_config.system.H
 
-    A_star, B_star, supports, n_attempts = sample_sparse_system(
-        d=d,
-        p=p,
-        s_A=exp_config.system.s_A,
-        s_B=exp_config.system.s_B,
-        seed=seed,
-        a_min=exp_config.system.a_min,
-        a_max=exp_config.system.a_max,
-        b_min=exp_config.system.b_min,
-        b_max=exp_config.system.b_max,
-    )
+    match exp_config.system.family:
+        case "synthetic":
+            A_star, B_star, supports, n_attempts = sample_synthetic_system(
+                d=d,
+                p=p,
+                s_A=exp_config.system.s_A,
+                s_B=exp_config.system.s_B,
+                seed=seed,
+                a_min=exp_config.system.a_min,
+                a_max=exp_config.system.a_max,
+                b_min=exp_config.system.b_min,
+                b_max=exp_config.system.b_max,
+                normalise_B=exp_config.system.normalise_B,
+            )
+        case "spring_chain":
+            A_star, B_star, supports, n_attempts = sample_spring_chain(
+                d=d,
+                p=p,
+                seed=seed,
+                k_min=exp_config.system.k_min,
+                k_max=exp_config.system.k_max,
+                m_min=exp_config.system.m_min,
+                m_max=exp_config.system.m_max,
+            )
+        case "ieee39":
+            A_star, B_star, supports, n_attempts = sample_ieee39(seed)
+        case _:
+            raise ValueError(f"Unknown system family: {exp_config.system.family}")
     if verbose:
         print(f"Sampled system after {n_attempts} attempt(s)")
 
@@ -315,6 +336,7 @@ def persist_raw_results(
         "results": results,
         "config": exp_config,
     }
+    os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, _SEED_RESULTS_FILENAME)
     with open(path, "wb") as f:
         pickle.dump(payload, f)
@@ -350,10 +372,16 @@ def find_result_dirs(path: str) -> list[str]:
     recursively. Used by --replot to handle both single result directories
     and sweep parent directories transparently.
     """
-    if os.path.isfile(os.path.join(path, _SEED_RESULTS_FILENAME)):
+
+    def _is_result_dir(files):
+        return _SEED_RESULTS_FILENAME in files or any(
+            f.startswith("seed_") and f.endswith(".npz") for f in files
+        )
+
+    if _is_result_dir(os.listdir(path)):
         return [path]
     found: list[str] = []
     for root, _dirs, files in os.walk(path):
-        if _SEED_RESULTS_FILENAME in files:
+        if _is_result_dir(files):
             found.append(root)
     return sorted(found)

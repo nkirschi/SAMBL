@@ -1,0 +1,7 @@
+# Run: python src/main.py --sweep synthetic --n-workers 20   ->  results/synthetic/d{d}/
+base: synthetic
+vary:
+  - {name: d10,  d: 10,  p: 5}
+  - {name: d20,  d: 20,  p: 10}
+  - {name: d50,  d: 50,  p: 25}
+  - {name: d100, d: 100, p: 50}

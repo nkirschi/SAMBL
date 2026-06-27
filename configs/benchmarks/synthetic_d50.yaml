@@ -1,7 +1,8 @@
 # d=50 benchmark: high dimension (s_A=2, s_B=1, total=3)
-name: d50
+name: synthetic_d50
 
 system:
+  family: synthetic
   d: 50
   p: 13
   s_A: 2
@@ -13,8 +14,8 @@ system:
 
 simulation:
   T: 1.0
-  dt: 0.025
-  sigma: 0.25
+  dt: 0.02
+  sigma: 0.3
   x0_std: 0.0
 
 cost:
@@ -23,7 +24,7 @@ cost:
 
 training:
   max_episodes: 200
-  n_seeds: 20
+  n_seeds: 25
   m_explore: 0
 
 agents:

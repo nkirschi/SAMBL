@@ -1,4 +1,4 @@
-base: d10
+base: synthetic_d10
 vary:
   - {r_scale: 1.0}
   - {r_scale: 0.5}

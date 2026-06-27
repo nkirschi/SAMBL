@@ -1,0 +1,7 @@
+# Run: python src/main.py --sweep springs --n-workers 20   ->  results/spring/d{d}/
+base: springs_d20
+vary:
+  - {name: d10,  d: 10,  p: 2}
+  - {name: d20,  d: 20,  p: 5}
+  - {name: d50,  d: 50,  p: 12}
+  - {name: d100, d: 100, p: 25}

@@ -1,7 +1,12 @@
 import numpy as np
 import pytest
 
-from system_generator import sample_sparse_system, _is_stabilisable
+from system_generator import (
+    sample_synthetic_system,
+    sample_spring_chain,
+    _is_stabilisable,
+    _is_controllable,
+)
 
 
 def _sample(d=6, p=2, s_A=2, s_B=1, seed=0, **kwargs):
@@ -12,7 +17,7 @@ def _sample(d=6, p=2, s_A=2, s_B=1, seed=0, **kwargs):
         "b_max": 1.9,
     }
     default_kwargs.update(kwargs)
-    return sample_sparse_system(d, p, s_A, s_B, seed, **default_kwargs)
+    return sample_synthetic_system(d, p, s_A, s_B, seed, **default_kwargs)
 
 
 class TestIsStabilisable:
@@ -32,7 +37,7 @@ class TestIsStabilisable:
         assert _is_stabilisable(A, B) is False
 
 
-class TestSampleSparseSystem:
+class TestSampleSyntheticSystem:
     def test_returns_correct_shapes(self):
         A, B, supports, attempt = _sample(d=6, p=2, s_A=2, s_B=1)
         assert A.shape == (6, 6)
@@ -81,7 +86,7 @@ class TestSampleSparseSystem:
 
     def test_raises_on_impossible_config(self):
         with pytest.raises(RuntimeError, match="Failed to sample"):
-            sample_sparse_system(
+            sample_synthetic_system(
                 d=20,
                 p=1,
                 s_A=1,
@@ -93,3 +98,57 @@ class TestSampleSparseSystem:
                 b_max=1.9,
                 max_attempts=5,
             )
+
+
+# ---------------------------------------------------------------------------
+# Spring-mass chain (banded, undamped, randomized parameters)
+# ---------------------------------------------------------------------------
+
+
+class TestSpringChain:
+    def test_structure_and_sparsity(self):
+        d, n = 20, 10
+        A, B, sup, _ = sample_spring_chain(d=d, p=5, seed=0)
+        assert A.shape == (d, d) and B.shape == (d, 5)
+        for i in range(n):
+            # position row: exactly q̇_i, coefficient 1
+            assert (A[2 * i] != 0).sum() == 1 and A[2 * i, 2 * i + 1] == 1.0
+            # velocity row: 3 nonzeros interior, 2 at the boundary; no velocity coupling
+            assert (A[2 * i + 1] != 0).sum() == (3 if 0 < i < n - 1 else 2)
+        # each control column hits exactly one (velocity) row
+        assert (np.count_nonzero(B, axis=0) == 1).all()
+        assert all(r % 2 == 1 for r in np.flatnonzero(B.any(axis=1)))
+
+    def test_banded_and_marginally_stable(self):
+        A, B, _, _ = sample_spring_chain(d=20, p=5, seed=1)
+        bandwidth = max(abs(i - j) for i, j in zip(*np.nonzero(A)))
+        assert bandwidth <= 3  # interleaved nearest-neighbour band
+        # undamped -> eigenvalues on the imaginary axis
+        assert np.max(np.abs(np.real(np.linalg.eigvals(A)))) < 1e-9
+
+    def test_controllable_across_dimensions(self):
+        for d in (10, 20, 50):
+            A, B, _, _ = sample_spring_chain(d=d, p=max(1, (d // 2) // 2), seed=0)
+            assert _is_controllable(A, B)
+
+    def test_supports_match_pattern(self):
+        d = 20
+        A, B, sup, _ = sample_spring_chain(d=d, p=5, seed=2)
+        for r in range(d):
+            nz = set(np.flatnonzero(A[r]).tolist()) | {
+                d + c for c in np.flatnonzero(B[r]).tolist()
+            }
+            assert nz == sup[r]
+
+    def test_deterministic(self):
+        A1, B1, _, _ = sample_spring_chain(d=20, p=5, seed=3)
+        A2, B2, _, _ = sample_spring_chain(d=20, p=5, seed=3)
+        assert np.array_equal(A1, A2) and np.array_equal(B1, B2)
+
+    def test_odd_d_rejected(self):
+        with pytest.raises(AssertionError):
+            sample_spring_chain(d=21, p=5, seed=0)
+
+    def test_too_many_actuators_rejected(self):
+        with pytest.raises(AssertionError):
+            sample_spring_chain(d=20, p=11, seed=0)  # p > n=10
