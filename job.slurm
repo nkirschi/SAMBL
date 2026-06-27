@@ -15,7 +15,7 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 
-MODE="$1 $2"  # e.g., 'benchmark d10' or 'sweep sparsity'
+MODE="$1 $2"  # e.g., 'benchmark synthetic_d20' or 'sweep sparsity'
 PYTHON="/dss/dsshome1/07/go69lir/SECTRL/.venv/bin/python"
 N_WORKERS=${SLURM_CPUS_PER_TASK}
 

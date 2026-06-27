@@ -36,20 +36,24 @@ import yaml
 from common import ExperimentConfig
 from runner import (
     run_paired_experiment,
-    persist_raw_results,
-    load_raw_results,
     find_result_dirs,
 )
-from analysis import (
+from results_io import (  # unified per-seed npz I/O + loader (reads legacy pkl too)
+    load_point,
+    persist_point,
+)
+from metrics import (
     all_pairwise_tests,
     final_summary_table,
     print_summary,
+    basin_entry_ratio,
+    seed_wins,
+)
+from dashboard import (
     plot_trajectories,
     plot_basin_entry_comparison,
     plot_parameter_evolution,
     plot_self_exploration_diagnostics,
-    basin_entry_ratio,
-    seed_wins,
 )
 
 
@@ -81,22 +85,24 @@ def load_sweep(name: str) -> dict:
     Sweep YAML schema:
         base:         <benchmark name>       # base config to load
         vary:
-          - {field1: val1, field2: val2}     # each dict = one override set
-          - ...
+          - {name: <point>, field1: val1, ...}   # one override set per point;
+          - ...                                    # 'name' labels the result dir
+
+    Returns {point_name: ExperimentConfig}. The optional 'name' key gives the point
+    its result-directory label (results/<sweep>/<point>/); without it the label is
+    derived from the overridden fields.
     """
     path = os.path.join(CONFIG_DIR, "sweeps", f"{name}.yaml")
     with open(path) as f:
         spec = yaml.safe_load(f)
 
     base = load_benchmark(spec["base"])
-    prefix = spec["base"]
     configs = {}
-
-    for override in spec["vary"]:
-        suffix = "_".join(f"{k}{v}" for k, v in override.items())
-        key = f"{prefix}_{suffix}"
-        configs[key] = ExperimentConfig.apply_overrides(base, override)
-
+    for entry in spec["vary"]:
+        override = dict(entry)
+        point = override.pop("name", None) or "_".join(
+            f"{k}{v}" for k, v in override.items())
+        configs[point] = ExperimentConfig.apply_overrides(base, override)
     return configs
 
 
@@ -339,44 +345,41 @@ def _generate_plots(
 
 
 def report(
-    name: str,
     exp_config: ExperimentConfig,
     results: list,
-    output_dir: str,
+    out_dir: str,
     elapsed: float | None = None,
-    verbose: bool = True,
+    plots: bool = False,
 ) -> None:
     """
-    Persist raw results, write summary text/JSON, and render plots.
-
-    After this returns, the result directory contains everything needed
-    to regenerate every output via `replot()`.
+    Persist per-seed results (npz) + config (json) to out_dir, write the summary, and
+    optionally render the development dashboards. After this, every output is
+    regenerable from out_dir via `replot()`. Publication figures come from figures.py.
     """
-    bench_dir = os.path.join(output_dir, name, time.strftime("%Y%m%d_%H%M%S"))
-    os.makedirs(bench_dir, exist_ok=True)
-    persist_raw_results(results, exp_config, bench_dir)
-    _save_summary(results, exp_config, bench_dir, elapsed=elapsed, verbose=verbose)
-    _generate_plots(results, exp_config, bench_dir)
-    print(f"Results saved to {bench_dir}/")
+    persist_point(results, exp_config, out_dir)
+    _save_summary(results, exp_config, out_dir, elapsed=elapsed, verbose=False)
+    if plots:
+        _generate_plots(results, exp_config, out_dir)
+    print(f"-> {out_dir}/  ({len(results)} seeds)")
 
 
 def replot(path: str) -> None:
     """
     Regenerate plots and summary files from previously persisted results.
 
-    `path` may be a single result directory (containing seed_results.pkl)
-    or a parent directory (e.g. results/sweeps/) whose subtree is walked
+    `path` may be a single result directory (containing seed_<n>.npz files)
+    or a parent directory (e.g. results/synthetic/) whose subtree is walked
     for all such directories. summary.txt, results.json, and the PNGs are
-    overwritten in place; seed_results.pkl is left untouched.
+    overwritten in place; the seed_<n>.npz files are left untouched.
     """
     result_dirs = find_result_dirs(path)
     if not result_dirs:
         raise FileNotFoundError(
-            f"No directories containing seed_results.pkl found under {path}"
+            f"No directories containing seed_*.npz found under {path}"
         )
     for d in result_dirs:
         print(f"\nReplotting {d}")
-        results, exp_config = load_raw_results(d)
+        results, exp_config = load_point(d)
         _save_summary(results, exp_config, d, elapsed=None, verbose=True)
         _generate_plots(results, exp_config, d)
     print(f"\nReplotted {len(result_dirs)} result director{'y' if len(result_dirs) == 1 else 'ies'}.")
@@ -410,7 +413,7 @@ def main():
         default=None,
         help=(
             "Path to a result directory or a parent containing several. "
-            "Regenerates plots and summary in place from seed_results.pkl; "
+            "Regenerates plots and summary in place from the seed_*.npz files; "
             "does not re-run any simulation."
         ),
     )
@@ -425,12 +428,15 @@ def main():
         ),
     )
     parser.add_argument("--output-dir", type=str, default="results")
+    parser.add_argument(
+        "--plots", action="store_true",
+        help="Also render the development dashboards alongside the persisted results.",
+    )
     args = parser.parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    bench_dir = os.path.join(args.output_dir, "benchmarks")
-    sweep_dir = os.path.join(args.output_dir, "sweeps")
-    for d in [bench_dir, sweep_dir]:
-        os.makedirs(d, exist_ok=True)
+    def out(*parts):
+        return os.path.join(args.output_dir, *parts)
 
     if args.replot:
         replot(args.replot)
@@ -440,9 +446,10 @@ def main():
         _print_config("debug", cfg)
         t0 = time.time()
         results = _run_sequential(cfg, verbose=True)
-        report("debug", cfg, results, bench_dir, elapsed=time.time() - t0)
+        report(cfg, results, out("debug"), elapsed=time.time() - t0, plots=args.plots)
 
     elif args.benchmark:
+        # A single config -> results/<name>/{seed_*.npz, config.json}.
         cfg = load_benchmark(args.benchmark)
         _print_config(args.benchmark, cfg)
         tasks = [(args.benchmark, cfg, seed) for seed in range(cfg.n_seeds)]
@@ -451,30 +458,25 @@ def main():
             results = _run_sequential(cfg, verbose=True)
         else:
             results = _run_parallel(tasks, args.n_workers)[args.benchmark]
-        report(args.benchmark, cfg, results, bench_dir, elapsed=time.time() - t0)
+        report(cfg, results, out(args.benchmark), elapsed=time.time() - t0, plots=args.plots)
 
     elif args.sweep:
+        # One point per vary entry -> results/<sweep>/<point>/.
         configs = load_sweep(args.sweep)
-        tasks = [
-            (name, cfg, seed)
-            for name, cfg in configs.items()
-            for seed in range(cfg.n_seeds)
-        ]
+        tasks = [(point, cfg, seed) for point, cfg in configs.items()
+                 for seed in range(cfg.n_seeds)]
         t0 = time.time()
         if args.n_workers <= 1:
-            grouped = {name: _run_sequential(cfg) for name, cfg in configs.items()}
+            grouped = {p: _run_sequential(cfg) for p, cfg in configs.items()}
         else:
             print(f"Running {len(tasks)} tasks across {args.n_workers} workers")
             grouped = _run_parallel(tasks, args.n_workers)
-        elapsed = time.time() - t0
-        print(f"Completed in {elapsed:.1f}s")
-        t0 = time.time()
-        for name, cfg in configs.items():
-            if not grouped.get(name):
-                print(f"Skipping report for '{name}': all seeds failed.")
-                continue
-            report(name, cfg, grouped[name], sweep_dir, verbose=False)
         print(f"Completed in {time.time() - t0:.1f}s")
+        for point, cfg in configs.items():
+            if not grouped.get(point):
+                print(f"Skipping '{point}': all seeds failed.")
+                continue
+            report(cfg, grouped[point], out(args.sweep, point), plots=args.plots)
 
     else:
         configs = {k: v for k, v in load_all_benchmarks().items() if k != "debug"}
@@ -486,7 +488,7 @@ def main():
                 results = _run_sequential(cfg, verbose=True)
             else:
                 results = _run_parallel(tasks, args.n_workers)[name]
-            report(name, cfg, results, bench_dir, elapsed=time.time() - t0)
+            report(cfg, results, out(name), elapsed=time.time() - t0, plots=args.plots)
 
 
 if __name__ == "__main__":
