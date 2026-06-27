@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 from scipy.integrate import solve_ivp
-from scipy.linalg import cho_factor, cho_solve
+from scipy.linalg import cho_factor, cho_solve, expm
 from common import SystemConfig
 
 
@@ -15,12 +15,6 @@ class RiccatiODESolver:
 
     In the tau = T - t parametrisation the RDE integrates forward from P(0) = 0:
         dP/dtau = A^T P + P A - P S P + Q,   S = B R^{-1} B^T.
-    We integrate with explicit DOP853 (Jacobian-free, so no d^2 x d^2 factorisation)
-    and evaluate P on the control grid tau_j = j*dt (j = 0..H), which is all get_K
-    ever queries. A benchmark across d in {5,10,20,50,100} found DOP853 the fastest
-    correct option -- ~6x faster than the Hamiltonian matrix exponential at d=100,
-    at ~1e-9 accuracy (the gain K = -R^{-1} B^T P is insensitive well below that).
-    Radau is kept as a stiff-case fallback should the explicit solver fail.
     """
 
     _RTOL = 1e-8
@@ -40,13 +34,42 @@ class RiccatiODESolver:
         terminal_cost: NDArray[np.float64] | None = None,
     ) -> bool:
         S = B @ cho_solve(self.R_cho, B.T)
-        grid = self._integrate(A, S, terminal_cost, "DOP853")
+        grid = self._integrate_expm(A, S, terminal_cost)
+        if grid is None:  # safety net for a degenerate Mobius step
+            grid = self._integrate(A, S, terminal_cost, "DOP853")
         if grid is None:
-            grid = self._integrate(A, S, terminal_cost, "Radau")  # stiff fallback
+            grid = self._integrate(A, S, terminal_cost, "Radau")
         if grid is None:
             return False
         self._P_grid = grid
         return True
+
+    def _integrate_expm(
+        self,
+        A: NDArray[np.float64],
+        S: NDArray[np.float64],
+        terminal_cost: NDArray[np.float64] | None,
+    ) -> NDArray[np.float64] | None:
+        d, H, dt = self.sys_cfg.d, self.sys_cfg.H, self.sys_cfg.dt
+        M = np.block([[-A, S], [self.Q, A.T]])
+        E = expm(M * dt)
+        if not np.all(np.isfinite(E)):
+            return None
+        E11, E12, E21, E22 = E[:d, :d], E[:d, d:], E[d:, :d], E[d:, d:]
+        grid = np.empty((H + 1, d, d), dtype=np.float64)
+        P = np.zeros((d, d)) if terminal_cost is None else np.asarray(terminal_cost, float)
+        grid[0] = 0.5 * (P + P.T)
+        for k in range(1, H + 1):
+            num = E21 + E22 @ P
+            den = E11 + E12 @ P
+            try:
+                P = np.linalg.solve(den.T, num.T).T  # P = num @ den^{-1}
+            except np.linalg.LinAlgError:
+                return None
+            if not np.all(np.isfinite(P)):
+                return None
+            grid[k] = 0.5 * (P + P.T)
+        return grid
 
     def _integrate(
         self,
