@@ -214,7 +214,9 @@ def plot_basin_entry_comparison(results, exp_config: ExperimentConfig, save_path
     fig, ax = plt.subplots(figsize=(6, 4))
     valid = ratios[np.isfinite(ratios)]
     if len(valid) > 0:
-        ax.hist(valid, bins=20, alpha=0.7, label="Empirical ratios")
+        # A (near-)zero-width range breaks fixed-count binning
+        degenerate = np.ptp(valid) <= 1e-9 * max(1.0, np.max(np.abs(valid)))
+        ax.hist(valid, bins=1 if degenerate else 20, alpha=0.7, label="Empirical ratios")
         ax.axvline(
             median, color="blue", linestyle="--", label=f"Median: {float(median):.2f}"
         )
@@ -505,8 +507,14 @@ def plot_self_exploration_diagnostics(
     # Right: histogram of min_eig
     ax = axes[1]
     n_bins = max(10, min(30, len(results) // 3))
+    finite_eigs = min_eigs[np.isfinite(min_eigs)]
+    # A (near-)zero-width range breaks fixed-count binning ("Cannot create N finite-sized
+    # bins") — e.g. ieee39's system is identical across seeds, or a normalised BᵀQB whose
+    # λ_min is 1 up to float noise. Use a single bin when the spread is negligible.
+    if finite_eigs.size == 0 or np.ptp(finite_eigs) <= 1e-9 * max(1.0, np.max(np.abs(finite_eigs))):
+        n_bins = 1
     ax.hist(
-        min_eigs,
+        finite_eigs,
         bins=n_bins,
         color="steelblue",
         edgecolor="white",

@@ -79,7 +79,7 @@ sbatch --cpus-per-task=${CPUS} --mem=${MEM} --time=${TIME} job.slurm sweep synth
 |------------|------------------------------------------|----------------------------------------------|
 | benchmark  | `synthetic`                              | canonical synthetic system (sweep base)      |
 | benchmark  | `synthetic_d10` … `synthetic_d100`       | individual synthetic dimension points        |
-| benchmark  | `springs_d20`                            | spring-mass chain, d=20                       |
+| benchmark  | `springs`                            | spring-mass chain, d=20                       |
 | benchmark  | `ieee39`                                 | IEEE 39-bus power grid (d=78, p=9)            |
 | benchmark  | `debug`                                  | tiny config for smoke tests                  |
 | sweep      | `synthetic`                              | dimension sweep d ∈ {10,20,50,100}, p=d/2    |

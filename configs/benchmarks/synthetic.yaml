@@ -1,10 +1,11 @@
-# d=10 benchmark: moderate dimension, sparse (s_A=2, s_B=1, total=3)
-name: synthetic_d10
+# Canonical synthetic base for the `synthetic` and `sparsity` sweeps (s_A=2, s_B=1).
+# d and p here are placeholders. Every sweep point overrides both (synthetic: p=d/2.
+name: synthetic
 
 system:
   family: synthetic
-  d: 10
-  p: 3
+  d: 20
+  p: 10
   s_A: 2
   s_B: 1
   a_min: 0.1

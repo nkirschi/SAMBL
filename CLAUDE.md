@@ -104,10 +104,10 @@ support was removed** — `load_point`/`load_study` read npz only; `config_*_jso
 ## Studies (configs)
 
 **Benchmarks:** `synthetic_d10/d20/d50/d100` (synthetic dimension points),
-`springs_d20` (spring chain), `ieee39` (power grid), `synthetic` (canonical sweep base),
+`springs` (spring chain), `ieee39` (power grid), `synthetic` (canonical sweep base),
 `clambda` (sweep base), `debug` (tiny smoke).
 **Sweeps:** `synthetic` (d∈{10,20,50,100}, p=d/2), `springs` (spring chain over d),
-`sparsity` (fixed d=50, increasing s), `clambda` (c_λ × d for figure G),
+`sparsity` (fixed d=50, p=25; **9 points** s2…s10), `clambda` (c_λ × d for figure G),
 `actuator`/`cost`/`excitation`/`sigmas` (auxiliary, not in the thesis figures).
 
 Sweep YAML = `base: <benchmark>` + `vary: [{name: <point>, <field>: <val>, …}]`. Overrides
@@ -130,20 +130,25 @@ thesis figures (`figures.py`, A–J) are separate.
 ## Cluster workflow — regenerate all results (likely the handoff task)
 
 `job.slurm` forwards two positional args to `main.py --<arg1> <arg2>` and sets
-`--n-workers` from `--cpus-per-task`. Defaults: 20 cpus / 16 GB / 30 min (override on the
-CLI for heavy studies — the synthetic `d=100`, sparsity `d=50`, ieee39 `d=78` will exceed
-30 min). It does **not** forward `--plots`.
+`--n-workers` from `--cpus-per-task`. Defaults: 20 cpus / 16 GB / 30 min. It **does**
+forward `--plots`, and it exports the user-local TeX Live onto PATH (batch jobs run
+`#!/bin/sh` non-interactively and do **not** source `~/.bashrc`, where that PATH normally
+lives), so the dev dashboards render in-batch via matplotlib usetex. Measured wall times
+are small: even synthetic `d=100`/`p=50` is ~50 s/seed → ~1.7 min/point at 20 workers, and
+every study finishes in well under 20 min at ~1.3 GB peak RAM — so the limits below (1 h,
+default 16 GB) carry large margin. Tune from `sacct -j <id> --format=Elapsed,MaxRSS`.
 
 ```bash
-# from the repo root on the cluster — the four (npz) studies that feed all figures:
-sbatch --time=06:00:00 --mem=32GB job.slurm sweep  synthetic   # -> results/synthetic/{d10,d20,d50,d100}/
-sbatch --time=02:00:00            job.slurm sweep  springs     # -> results/springs/{d10,d20,d50,d100}/
-sbatch --time=06:00:00 --mem=32GB job.slurm sweep  sparsity    # -> results/sparsity/{s2,s3,s4,s5}/
-sbatch --time=04:00:00 --mem=32GB job.slurm sweep  clambda     # -> results/clambda/<15 points>/  (figure G)
-sbatch --time=02:00:00            job.slurm benchmark ieee39   # -> results/ieee39/
+# from the repo root on the cluster — the five (npz) studies that feed all figures:
+sbatch --time=01:00:00 job.slurm sweep     synthetic   # -> results/synthetic/{d10,d20,d50,d100}/
+sbatch --time=01:00:00 job.slurm sweep     springs     # -> results/springs/{d10,d20,d50,d100}/
+sbatch --time=01:00:00 job.slurm sweep     sparsity    # -> results/sparsity/{s2..s10}/  (9 points)
+sbatch --time=01:30:00 job.slurm sweep     clambda     # -> results/clambda/<15 points>/ (figure G)
+sbatch --time=00:30:00 job.slurm benchmark ieee39      # -> results/ieee39/
 ```
-Then regenerate figures (after `rsync`-ing results back, or on the cluster with LaTeX):
-`uv run python src/figures.py`. Tune `--time`/`--mem` from `sacct -j <id> --format=Elapsed,MaxRSS`.
+Then regenerate figures (after `rsync`-ing results back, or on the cluster):
+`uv run python src/figures.py` — needs that same TeX Live on PATH (interactive shells get it
+from `~/.bashrc`; a non-interactive one must add `~/texlive/2026/bin/x86_64-linux`).
 
 ## Conventions & decisions established this session
 
@@ -165,9 +170,9 @@ Then regenerate figures (after `rsync`-ing results back, or on the cluster with 
   citations live there; the appendix is an unnumbered `\chapter*` because the thesis class
   renders chapter numbers as die faces via `\dice{\thechapter}`, which breaks on appendix
   letters — don't use a numbered appendix chapter.)
-- **Figure G (`clambda`) has not been run yet** — `results/clambda/` doesn't exist, so G is
-  skipped until `sbatch … sweep clambda` runs. (`clambda.yaml`: 15 points = 3 d × 5 c_λ,
-  agents = oracle+sparse_greedy, n_seeds=25.)
+- **Figure G (`clambda`)**: `clambda.yaml` = 15 points (3 d × 5 c_λ), agents =
+  oracle+sparse_greedy, n_seeds=25. Being an oracle+sparse-only study it yields
+  `basin_entry=null` (the dense-vs-sparse metric is undefined; guarded in `_build_save_dict`).
 - **Stale junk in `results/`** (gitignored, safe to ignore/delete): old `results/{benchmarks,
   sweeps,d10,d20,hpo,hpo_clambda}/` from the pre-restructure layout, and ~117 now-dead
   `seed_results.pkl` files (nothing reads them anymore — `find results -name seed_results.pkl -delete`).
@@ -178,7 +183,12 @@ Then regenerate figures (after `rsync`-ing results back, or on the cluster with 
 
 ## Status
 
-- Suite green (63). Figures pipeline runs end-to-end from the migrated NPZ tree (G skipped
-  pending the clambda run). The synthetic/springs/sparsity/ieee39 results currently on disk
-  were migrated from old pickle runs; re-running on the cluster (above) regenerates them
-  cleanly in npz.
+- Suite green (63). **All five figure studies were regenerated on the cluster (2026-06-27,
+  jobs 5690309–13, all COMPLETED in 4–13 min, ≤2.5 GB RAM) and all 10 figures A–J built**
+  into `results/figures/*.pdf` (incl. the previously-never-run G). Getting there fixed four
+  bugs (all currently uncommitted): (1) created the missing `configs/benchmarks/synthetic.yaml`
+  base that the synthetic+sparsity sweeps reference; (2) job.slurm now exports the user-local
+  TeX Live onto PATH so the `--plots` dashboards render in batch (batch shells don't source
+  `~/.bashrc`); (3) guarded `basin_entry` for oracle+sparse-only studies (clambda KeyError);
+  (4) hardened dashboard histograms against a (near-)zero-width range (ieee39 / normalised
+  BᵀQB). Old `results/{benchmarks,sweeps}/` pickle dirs remain (gitignored, safe to delete).

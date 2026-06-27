@@ -14,6 +14,7 @@
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
+export PATH="$PATH:/dss/dsshome1/07/go69lir/texlive/2026/bin/x86_64-linux"
 
 MODE="$1 $2"  # e.g., 'benchmark synthetic_d20' or 'sweep sparsity'
 PYTHON="/dss/dsshome1/07/go69lir/SECTRL/.venv/bin/python"
