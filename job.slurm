@@ -24,4 +24,5 @@ echo "Running ${MODE} with ${N_WORKERS} workers"
 srun --cpu-bind=cores,verbose \
     ${PYTHON} -u src/main.py \
         --${MODE} \
-        --n-workers ${N_WORKERS}
+        --n-workers ${N_WORKERS} \
+        --plots

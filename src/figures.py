@@ -11,7 +11,6 @@ CLI:  uv run python src/figures.py --focal-d 20
 from __future__ import annotations
 
 import os
-import csv
 import argparse
 import numpy as np
 import matplotlib
@@ -226,19 +225,25 @@ def fig_btqb_cond(sweep, outdir):
 
 
 # ------------------------------------------- G. regularisation-strength sweep
-def fig_hyperparam(outdir, clambda_csv="results/hpo_clambda/metrics.csv"):
-    if not os.path.exists(clambda_csv):
+def fig_hyperparam(study_dir, outdir, chosen=0.02):
+    """Sparse-Greedy final regret vs the LASSO constant c_lambda, one curve per d.
+    Reads a c_lambda x d study (results/clambda); each point contributes its own
+    config's c_lambda and d, so the grid is taken straight from the run."""
+    study = load_study(study_dir)
+    if not study:
         return
+    by_d = {}
+    for res, cfg in study.values():
+        by_d.setdefault(cfg.system.d, []).append(
+            (cfg.estimators.c_lambda, float(np.median(_final_regret(res, "sparse_greedy"))))
+        )
     fig, ax = plt.subplots(figsize=(6, 4.2))
-    rows = list(csv.DictReader(open(clambda_csv)))
-    dvals = sorted({int(r["d"]) for r in rows})
     palette = (OK["green"], OK["blue"], OK["vermillion"], OK["purple"], OK["sky"], OK["orange"])
-    for d, col in zip(dvals, palette):
-        cls = sorted({float(r["c_lambda"]) for r in rows if int(r["d"]) == d})
-        reg = [next(float(r["regret_med"]) for r in rows
-                   if int(r["d"]) == d and float(r["c_lambda"]) == cl) for cl in cls]
-        ax.plot(cls, reg, color=col, marker="o", ms=4, label=f"$d={d}$")
-    ax.axvline(0.02, color="grey", ls=":", lw=1, label="chosen $c_\\lambda=0.02$")
+    for d, col in zip(sorted(by_d), palette):
+        pts = sorted(by_d[d])
+        ax.plot([cl for cl, _ in pts], [r for _, r in pts],
+                color=col, marker="o", ms=4, label=f"$d={d}$")
+    ax.axvline(chosen, color="grey", ls=":", lw=1, label=fr"chosen $c_\lambda={chosen}$")
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xlabel(r"regularisation constant $c_\lambda$")
     ax.set_ylabel("Sparse-Greedy regret $R_M$")
@@ -319,9 +324,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--focal-d", type=int, default=20)
     ap.add_argument("--synthetic-dir", default="results/synthetic")
-    ap.add_argument("--spring-dir", default="results/spring")
+    ap.add_argument("--spring-dir", default="results/springs")
     ap.add_argument("--ieee39-dir", default="results/ieee39")
     ap.add_argument("--sparsity-dir", default="results/sparsity")
+    ap.add_argument("--clambda-dir", default="results/clambda")
     ap.add_argument("--out", default="results/figures")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
@@ -345,7 +351,10 @@ def main():
         fig_ab_asymmetry(*focal, args.out);         print("  [D] A/B asymmetry")
         fig_excitation_re(*focal, args.out);        print("  [E] excitation / RE")
     fig_btqb_cond(sweep, args.out);                 print("  [F] cond(B^T Q B) vs d")
-    fig_hyperparam(args.out);                       print("  [G] c_lambda sweep")
+    if os.path.isdir(args.clambda_dir):
+        fig_hyperparam(args.clambda_dir, args.out); print("  [G] c_lambda sweep")
+    else:
+        print("  [G] c_lambda sweep skipped (no results/clambda/)")
 
     spring = by_int(args.spring_dir)
     if spring:

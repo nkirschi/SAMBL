@@ -1,0 +1,44 @@
+# Base for the c_lambda calibration sweep. Lighter than the main synthetic benchmark.
+name: clambda
+
+system:
+  family: synthetic
+  d: 10
+  p: 5
+  s_A: 2
+  s_B: 1
+  a_min: 0.1
+  a_max: 1.9
+  b_min: 0.1
+  b_max: 1.9
+  normalise_B: true
+
+simulation:
+  T: 1.0
+  dt: 0.02
+  sigma: 0.3
+  x0_std: 1.0
+
+cost:
+  q_scale: 1.0
+  r_scale: 1.0
+
+training:
+  max_episodes: 200
+  n_seeds: 25
+  m_explore: 0
+
+agents:
+  - oracle
+  - sparse_greedy
+
+estimation:
+  lambda_lasso: null
+  c_lambda: 0.02
+  delta: 0.05
+  mu_ridge: 1.0e-6
+  lasso_max_iter: 10000
+  lasso_tol: 1.0e-4
+
+excitation:
+  sigma_u: 0.05

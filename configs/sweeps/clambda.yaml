@@ -1,0 +1,21 @@
+# c_lambda calibration (figure G): Sparse-Greedy final regret vs the LASSO constant
+# c_lambda, swept across dimensions to show the regret valley is consistent and locate
+# the chosen c_lambda = 0.02. fig_hyperparam reads c_lambda/d from each point's config.
+# Run: python src/main.py --sweep clambda --n-workers 20   ->  results/clambda/<point>/
+base: clambda
+vary:
+  - {name: d10_cl0.005, d: 10, p: 5,  c_lambda: 0.005}
+  - {name: d10_cl0.01,  d: 10, p: 5,  c_lambda: 0.01}
+  - {name: d10_cl0.02,  d: 10, p: 5,  c_lambda: 0.02}
+  - {name: d10_cl0.05,  d: 10, p: 5,  c_lambda: 0.05}
+  - {name: d10_cl0.1,   d: 10, p: 5,  c_lambda: 0.1}
+  - {name: d20_cl0.005, d: 20, p: 10, c_lambda: 0.005}
+  - {name: d20_cl0.01,  d: 20, p: 10, c_lambda: 0.01}
+  - {name: d20_cl0.02,  d: 20, p: 10, c_lambda: 0.02}
+  - {name: d20_cl0.05,  d: 20, p: 10, c_lambda: 0.05}
+  - {name: d20_cl0.1,   d: 20, p: 10, c_lambda: 0.1}
+  - {name: d50_cl0.005, d: 50, p: 25, c_lambda: 0.005}
+  - {name: d50_cl0.01,  d: 50, p: 25, c_lambda: 0.01}
+  - {name: d50_cl0.02,  d: 50, p: 25, c_lambda: 0.02}
+  - {name: d50_cl0.05,  d: 50, p: 25, c_lambda: 0.05}
+  - {name: d50_cl0.1,   d: 50, p: 25, c_lambda: 0.1}

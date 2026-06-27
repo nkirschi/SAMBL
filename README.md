@@ -83,8 +83,9 @@ sbatch --cpus-per-task=${CPUS} --mem=${MEM} --time=${TIME} job.slurm sweep synth
 | benchmark  | `ieee39`                                 | IEEE 39-bus power grid (d=78, p=9)            |
 | benchmark  | `debug`                                  | tiny config for smoke tests                  |
 | sweep      | `synthetic`                              | dimension sweep d ∈ {10,20,50,100}, p=d/2    |
-| sweep      | `spring`                                 | dimension sweep on the spring chain          |
+| sweep      | `springs`                                | dimension sweep on the spring chain          |
 | sweep      | `sparsity`                               | fixed d=50, increasing row sparsity s        |
+| sweep      | `clambda`                                | c_λ × d calibration (figure G)               |
 | sweep      | `actuator` `cost` `excitation` `sigmas`  | auxiliary one-parameter sweeps               |
 
 ## Result layout
@@ -112,8 +113,8 @@ Regenerate every thesis figure (A–J) from the result tree:
 uv run python src/figures.py            # -> results/figures/*.pdf (+ .png previews)
 ```
 
-It reads `results/{synthetic,spring,ieee39,sparsity}` (override with
-`--synthetic-dir`, `--spring-dir`, `--ieee39-dir`, `--sparsity-dir`, `--out`).
+It reads `results/{synthetic,springs,ieee39,sparsity,clambda}` (override with
+`--synthetic-dir`, `--spring-dir`, `--ieee39-dir`, `--sparsity-dir`, `--clambda-dir`, `--out`).
 
 The two system **illustrations** are notebooks that write their PDFs/PNGs into
 `notebooks/`:
