@@ -54,6 +54,7 @@ class EstimatorConfig:
     lasso_max_iter: int
     lasso_tol: float
     lambda_warmup: float = 1e-6
+    n_fit_threads: int = 1
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,7 @@ class ExperimentConfig:
             lasso_max_iter=est.get("lasso_max_iter", 5000),
             lasso_tol=float(est.get("lasso_tol", 1e-4)),
             lambda_warmup=float(est.get("lambda_warmup", 1e-6)),
+            n_fit_threads=int(est.get("n_fit_threads", 1)),
         )
 
         exc_cfg = ExcitationConfig(sigma_u=exc.get("sigma_u", 0.1))

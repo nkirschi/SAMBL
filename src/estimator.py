@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from sklearn.linear_model._cd_fast import enet_coordinate_descent_gram
 from sklearn.exceptions import ConvergenceWarning
 from common import EstimatorConfig, SystemConfig
@@ -123,6 +124,7 @@ class RowLassoEstimator:
         self.use_warmup = use_warmup
         self.max_iter = est_cfg.lasso_max_iter
         self.tol = est_cfg.lasso_tol
+        self.n_fit_threads = getattr(est_cfg, "n_fit_threads", 1)
         self._fitted_once = False
         # Incremental accumulators (unnormalised sums over all rows seen).
         self._gram = np.zeros((self.z_dim, self.z_dim), dtype=np.float64)  # Z^T Z
@@ -131,7 +133,6 @@ class RowLassoEstimator:
         self._n_seen: int = 0
         # Warm-start coefficients carried across episodes (one row each).
         self._coef = np.zeros((self.x_dim, self.z_dim), dtype=np.float64)
-        self._rng = np.random.RandomState(0)  # required by the Cython CD (cyclic)
 
     @property
     def gram(self) -> NDArray[np.float64]:
@@ -170,15 +171,25 @@ class RowLassoEstimator:
                 # design; CD is not expected to fully converge, and a rough
                 # nonzero estimate is all we need to break the trap.
                 warnings.simplefilter("ignore", ConvergenceWarning)
-            for i in range(self.x_dim):
-                # y enters the solver only through ||y||^2 (the dual-gap
-                # tolerance), so a length-1 vector with the right norm suffices.
-                y_norm = np.array([np.sqrt(self._yy[i])], dtype=np.float64)
-                w, _, _, _ = enet_coordinate_descent_gram(
-                    self._coef[i], alpha, 0.0, self._gram,
-                    np.ascontiguousarray(self._rhs[i]), y_norm,
-                    self.max_iter, self.tol, self._rng, 0, 0,
-                )
-                self._coef[i] = w
+            if self.n_fit_threads <= 1:
+                for i in range(self.x_dim):
+                    self._fit_row(i, alpha)
+            else:
+                # Independent rows over a read-only Gram -> exact thread parallelism.
+                with ThreadPoolExecutor(max_workers=self.n_fit_threads) as ex:
+                    list(ex.map(lambda i: self._fit_row(i, alpha), range(self.x_dim)))
 
         return self._coef.copy()
+
+    def _fit_row(self, i: int, alpha: float) -> None:
+        # y enters the solver only through ||y||^2 (the dual-gap tolerance), so a
+        # length-1 vector with the right norm suffices. random=0 -> cyclic CD, so the
+        # RNG is never sampled; a fresh per-row state keeps the threaded path race-free
+        # and bit-identical to the sequential one.
+        y_norm = np.array([np.sqrt(self._yy[i])], dtype=np.float64)
+        w, _, _, _ = enet_coordinate_descent_gram(
+            self._coef[i], alpha, 0.0, self._gram,
+            np.ascontiguousarray(self._rhs[i]), y_norm,
+            self.max_iter, self.tol, np.random.RandomState(0), 0, 0,
+        )
+        self._coef[i] = w
