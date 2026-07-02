@@ -1134,7 +1134,7 @@ def main():
     ap.add_argument("--synthetic-dir", default="results/synthetic")
     ap.add_argument("--spring-dir", default="results/springs")
     ap.add_argument("--ieee39-dir", default="results/ieee39")
-    ap.add_argument("--sparsity-dir", default="results/sparsity_d100")
+    ap.add_argument("--sparsity-dir", default="results/sparsity")
     ap.add_argument("--clambda-dir", default="results/clambda")
     ap.add_argument("--excitation-dir", default="results/excitation")
     ap.add_argument("--cost-dir", default="results/cost")
