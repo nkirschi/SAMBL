@@ -164,31 +164,23 @@ def basin_entry_analysis(
 
 
 def basin_entry_ratio(
-    results, dense_name="dense_greedy", sparse_name="sparse_greedy", threshold=0.15
+    results, dense_name="dense_greedy", sparse_name="sparse_greedy", threshold=None
 ):
-    dense_m0 = basin_entry_analysis(results, dense_name, (threshold,))[threshold]
-    sparse_m0 = basin_entry_analysis(results, sparse_name, (threshold,))[threshold]
-
-    M = len(results[0].diagnostic_trajectory(dense_name, "error_joint")) if results else 0
-    dense_censored = np.isnan(dense_m0)
-    sparse_censored = np.isnan(sparse_m0)
-
-    # Episodes-to-enter, 1-indexed; a non-entry is censored at M+1 (a lower bound:
-    # M episodes were not enough, so the true entry time is at least M+1).
-    dense_time = np.where(dense_censored, M + 1, dense_m0 + 1)
-    sparse_time = np.where(sparse_censored, M + 1, sparse_m0 + 1)
-
-    ratios = dense_time / sparse_time
-    both_censored = dense_censored & sparse_censored
-    ratios[both_censored] = np.nan  # neither entered -> uninformative
-
-    median = float(np.nanmedian(ratios)) if np.any(~both_censored) else np.nan
-    n = len(ratios)
+    ratios = []
+    for r in results:
+        ed = np.asarray(r.diagnostic_trajectory(dense_name, "error_joint"), dtype=float)
+        es = np.asarray(r.diagnostic_trajectory(sparse_name, "error_joint"), dtype=float)
+        thr = max(ed[-1], es[-1])
+        dense_time = int(np.argmax(ed <= thr)) + 1
+        sparse_time = int(np.argmax(es <= thr)) + 1
+        ratios.append(dense_time / sparse_time)
+    ratios = np.array(ratios, dtype=float)
+    median = float(np.median(ratios)) if len(ratios) else np.nan
     stats = {
-        "n_seeds": int(n),
-        "dense_never_entered": float(np.mean(dense_censored)) if n else float("nan"),
-        "sparse_never_entered": float(np.mean(sparse_censored)) if n else float("nan"),
-        "both_never_entered": int(np.sum(both_censored)),
+        "n_seeds": int(len(ratios)),
+        "dense_never_entered": 0.0,
+        "sparse_never_entered": 0.0,
+        "both_never_entered": 0,
     }
     return ratios, median, stats
 
