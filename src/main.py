@@ -30,8 +30,6 @@ import json
 import time
 import glob
 from collections import defaultdict
-import io
-from contextlib import redirect_stdout
 import yaml
 from common import ExperimentConfig
 from runner import (
@@ -45,9 +43,7 @@ from results_io import (  # unified per-seed npz I/O + loader (reads legacy pkl 
 from metrics import (
     all_pairwise_tests,
     final_summary_table,
-    print_summary,
     basin_entry_ratio,
-    seed_wins,
 )
 from dashboard import (
     plot_trajectories,
@@ -187,53 +183,6 @@ def _run_parallel(
 # Reporting
 
 
-def _build_summary_text(
-    results: list,
-    exp_config: ExperimentConfig,
-    elapsed: float | None = None,
-) -> str:
-    """Construct the human-readable summary string."""
-    import numpy as np
-
-    table = final_summary_table(results, agent_names=exp_config.agents)
-    tests = all_pairwise_tests(results)
-    min_eigs = [float(r.btqb_min_eig) for r in results]
-    max_eigs = [float(r.btqb_max_eig) for r in results]
-
-    buf = io.StringIO()
-    with redirect_stdout(buf):
-        if elapsed is not None:
-            print(f"Completed in {elapsed:.1f}s")
-        print("\nFinal-episode summary:")
-        print_summary(table)
-        print("\nPaired tests:")
-        for label, test_dict in tests.items():
-            sign = test_dict["sign_test"]
-            print(
-                f"  {label}: wins={sign['wins_b']}/{sign['n']}, "
-                f"p={sign['p_value']:.4f} (sign test)"
-            )
-        learning = [n for n in exp_config.agents if n != "oracle"]
-        if "dense_greedy" in exp_config.agents:
-            for sp in [n for n in learning if n != "dense_greedy"]:
-                w = seed_wins(results, "dense_greedy", sp)
-                print(f"  Seed wins ({sp} < dense_greedy): {w}/{len(results)}")
-        print(f"\nSelf-exploration (B*\u1d40 Q B*):")
-        print(
-            f"  \u03bb_min : "
-            f"min={min(min_eigs):.4f}  "
-            f"median={float(np.median(min_eigs)):.4f}  "
-            f"max={max(min_eigs):.4f}"
-        )
-        print(
-            f"  \u03bb_max : "
-            f"min={min(max_eigs):.4f}  "
-            f"median={float(np.median(max_eigs)):.4f}  "
-            f"max={max(max_eigs):.4f}"
-        )
-    return buf.getvalue()
-
-
 def _build_save_dict(
     results: list,
     exp_config: ExperimentConfig,
@@ -310,19 +259,13 @@ def _build_save_dict(
     }
 
 
-def _save_summary(
+def _save_results_json(
     results: list,
     exp_config: ExperimentConfig,
     output_dir: str,
     elapsed: float | None = None,
-    verbose: bool = True,
 ) -> None:
-    """Write summary.txt (human-readable) and results.json (machine-readable)."""
-    summary_text = _build_summary_text(results, exp_config, elapsed)
-    if verbose:
-        print(summary_text, end="")
-    with open(os.path.join(output_dir, "summary.txt"), "w") as f:
-        f.write(summary_text)
+    """Write results.json (machine-readable aggregate summary)."""
     save_dict = _build_save_dict(results, exp_config, elapsed)
     with open(os.path.join(output_dir, "results.json"), "w") as f:
         json.dump(save_dict, f, indent=2)
@@ -333,21 +276,21 @@ def _generate_plots(
     exp_config: ExperimentConfig,
     output_dir: str,
 ) -> None:
-    """Render and save all PNGs into output_dir."""
+    """Render and save all dev dashboard PNGs into <output_dir>/plots/."""
+    fig_dir = os.path.join(output_dir, "plots")
+    os.makedirs(fig_dir, exist_ok=True)
     plot_trajectories(
-        results, exp_config, save_path=os.path.join(output_dir, "trajectories.png")
+        results, exp_config, save_path=os.path.join(fig_dir, "trajectories.png")
     )
     plot_basin_entry_comparison(
-        results, exp_config, save_path=os.path.join(output_dir, "basin_entry.png")
+        results, exp_config, save_path=os.path.join(fig_dir, "basin_entry.png")
     )
     plot_self_exploration_diagnostics(
         results,
         exp_config,
-        save_path=os.path.join(output_dir, "self_exploration.png"),
+        save_path=os.path.join(fig_dir, "self_exploration.png"),
     )
-    param_dir = os.path.join(output_dir, "params_evolution")
-    os.makedirs(param_dir, exist_ok=True)
-    plot_parameter_evolution(results, exp_config, output_dir=param_dir)
+    plot_parameter_evolution(results, exp_config, output_dir=fig_dir)
 
 
 def report(
@@ -363,7 +306,7 @@ def report(
     regenerable from out_dir via `replot()`. Publication figures come from figures.py.
     """
     persist_point(results, exp_config, out_dir)
-    _save_summary(results, exp_config, out_dir, elapsed=elapsed, verbose=False)
+    _save_results_json(results, exp_config, out_dir, elapsed=elapsed)
     if plots:
         _generate_plots(results, exp_config, out_dir)
     print(f"-> {out_dir}/  ({len(results)} seeds)")
@@ -371,11 +314,11 @@ def report(
 
 def replot(path: str) -> None:
     """
-    Regenerate plots and summary files from previously persisted results.
+    Regenerate plots and results.json from previously persisted results.
 
     `path` may be a single result directory (containing seed_<n>.npz files)
     or a parent directory (e.g. results/synthetic/) whose subtree is walked
-    for all such directories. summary.txt, results.json, and the PNGs are
+    for all such directories. results.json and the PNGs are
     overwritten in place; the seed_<n>.npz files are left untouched.
     """
     result_dirs = find_result_dirs(path)
@@ -385,8 +328,8 @@ def replot(path: str) -> None:
         )
     for d in result_dirs:
         print(f"\nReplotting {d}")
-        results, exp_config = load_point(d)
-        _save_summary(results, exp_config, d, elapsed=None, verbose=True)
+        results, exp_config = load_point(d, with_snapshots=True)  # dashboards need A_est/B_est
+        _save_results_json(results, exp_config, d, elapsed=None)
         _generate_plots(results, exp_config, d)
     print(f"\nReplotted {len(result_dirs)} result director{'y' if len(result_dirs) == 1 else 'ies'}.")
 
@@ -435,6 +378,10 @@ def main():
     )
     parser.add_argument("--output-dir", type=str, default="results")
     parser.add_argument(
+        "--points", type=str, default=None,
+        help="Comma-separated sweep point names to run (e.g. 'd500'). Default runs all.",
+    )
+    parser.add_argument(
         "--plots", action="store_true",
         help="Also render the development dashboards alongside the persisted results.",
     )
@@ -469,6 +416,11 @@ def main():
     elif args.sweep:
         # One point per vary entry -> results/<sweep>/<point>/.
         configs = load_sweep(args.sweep)
+        if args.points:
+            want = {p.strip() for p in args.points.split(",")}
+            configs = {p: c for p, c in configs.items() if p in want}
+            if not configs:
+                raise SystemExit(f"--points {sorted(want)} matched no points in '{args.sweep}'")
         tasks = [(point, cfg, seed) for point, cfg in configs.items()
                  for seed in range(cfg.n_seeds)]
         t0 = time.time()
