@@ -85,20 +85,21 @@ class RiccatiODESolver:
             return (A.T @ P + P @ A - P @ S @ P + self.Q).ravel()
 
         p0 = np.zeros(d * d) if terminal_cost is None else terminal_cost.ravel()
+        # Evaluate directly on the control grid via t_eval rather than dense_output:
+        # get_K only ever queries grid points, and storing a dense interpolant of a
+        # d^2-dimensional ODE is memory-prohibitive for large, stiff systems -- it
+        # OOM-kills high-dimensional grids on the rare seeds that fall
+        # back to this integrator.
+        grid_t = np.arange(H + 1) * dt
         sol = solve_ivp(
             rhs, [0, T], p0, method=method,
-            rtol=self._RTOL, atol=self._ATOL, dense_output=True,
+            rtol=self._RTOL, atol=self._ATOL, t_eval=grid_t,
         )
         if not sol.success:
             return None
-        # Materialise P on the control grid and discard the dense interpolant.
-        # get_K only ever queries grid points (t = k*dt), and is called every
-        # control step, so a precomputed grid + cheap lerp beats re-evaluating
-        # scipy's dense output (~3x faster per call) and keeps get_K independent
-        # of which integrator ran.
         grid = np.empty((H + 1, d, d), dtype=np.float64)
         for j in range(H + 1):
-            P = sol.sol(j * dt).reshape(d, d)
+            P = sol.y[:, j].reshape(d, d)
             grid[j] = 0.5 * (P + P.T)
         return grid
 

@@ -75,10 +75,11 @@ def test_case_3_damped(config):
 # ---------------------------------------------------------------------------
 # Solver accuracy on representative sparse systems.
 #
-# The production solver integrates the RDE with explicit DOP853 (Radau as a
-# stiff fallback). These tests pin its accuracy against an independent tight-
-# tolerance integration and against the algebraic Riccati (CARE) limit, and
-# check that the DOP853 and Radau paths agree.
+# The production solver uses the exact Hamiltonian matrix-exponential recurrence
+# (_integrate_expm), with explicit DOP853 and implicit Radau as fallbacks. These
+# tests pin its accuracy against an independent tight-tolerance integration and
+# against the algebraic Riccati (CARE) limit, and check that the Hamiltonian,
+# DOP853, and Radau paths all agree.
 # ---------------------------------------------------------------------------
 
 
@@ -157,6 +158,24 @@ def test_care_limit(d, p):
     P0 = solver._P_grid[cfg.H]  # tau = T  (physics time t = 0)
     P_care = solve_continuous_are(A, B, Q, R)
     assert np.linalg.norm(P0 - P_care) / np.linalg.norm(P_care) < 1e-5
+
+
+@pytest.mark.parametrize("d,p", [(5, 2), (10, 3), (20, 5)])
+@pytest.mark.parametrize("shift", [0.0, 5.0])
+def test_hamiltonian_matches_tight_reference(d, p, shift):
+    """The exact Hamiltonian recurrence (_integrate_expm) matches a tight, independent
+    integrator -- on stable (shift=0) and near-unstable (shift=5) systems alike, where
+    the matrix exponential is exact and stiffness-free. This forces the Hamiltonian path
+    directly (rather than going through solve(), which could fall back to an integrator)."""
+    cfg = _config(d, p)
+    A, B, Q, R = _representative(d, p, seed=0)
+    A = A + shift * np.eye(d)  # push toward instability (stiff for explicit integrators)
+    solver = RiccatiODESolver(cfg, Q, R)
+    S = B @ np.linalg.solve(R, B.T)
+    ham = solver._integrate_expm(A, S, None)
+    assert ham is not None
+    ref = _reference_grid(A, B, Q, R, cfg.T, cfg.dt, cfg.H)
+    assert _rel_fro(ham, ref) < 1e-6
 
 
 def test_dop853_matches_radau_fallback():
