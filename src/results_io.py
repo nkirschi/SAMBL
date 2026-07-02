@@ -27,6 +27,13 @@ CONFIG_NAME = "config.json"
 
 
 # --------------------------------------------------------- SeedResult <-> npz
+def _snap_path(seed_path: str) -> str:
+    """Sibling file holding the heavy parameter snapshots: seed_N.npz -> seed_N_snapshots.npz."""
+    d, b = os.path.split(seed_path)
+    stem = b[:-4] if b.endswith(".npz") else b
+    return os.path.join(d, stem + "_snapshots.npz")
+
+
 def seed_to_npz(res: SeedResult, path: str) -> None:
     """Serialise one seed to npz. Scalar diagnostics (cost, errors, F1, ...) become
     one (M,) array per key; matrix-valued diagnostics stored at checkpoint episodes
@@ -58,10 +65,15 @@ def seed_to_npz(res: SeedResult, path: str) -> None:
                 arrays[f"adiag::{ag}::{k}::vals"] = np.stack(
                     [np.asarray(v, dtype=np.float64) for _, v in present]
                 )
-    np.savez_compressed(path, **arrays)
+    # Split the heavy adiag parameter snapshots (A_est/B_est over episodes) into a sibling
+    # file so the figure loaders never touch them; the light main file holds everything else.
+    snap = {k: v for k, v in arrays.items() if k.startswith("adiag::")}
+    main = {k: v for k, v in arrays.items() if not k.startswith("adiag::")}
+    np.savez_compressed(_snap_path(path), **snap)
+    np.savez_compressed(path, **main)
 
 
-def seed_from_npz(path: str) -> SeedResult:
+def seed_from_npz(path: str, with_snapshots: bool = False) -> SeedResult:
     z = np.load(path, allow_pickle=True)
     res = SeedResult(
         seed=int(z["seed"]),
@@ -78,13 +90,24 @@ def seed_from_npz(path: str) -> SeedResult:
                 k = f.split("::", 2)[2]
                 for m, v in enumerate(z[f]):
                     eps[m].diagnostics[k] = float(v)
-            elif f.startswith(f"adiag::{ag}::") and f.endswith("::eps"):
+        res.episodes[ag] = eps
+    if with_snapshots:
+        _merge_snapshots(res, _snap_path(path))
+    return res
+
+
+def _merge_snapshots(res: SeedResult, snap_path: str) -> None:
+    """Merge the heavy A_est/B_est parameter snapshots from the sibling file into res."""
+    if not os.path.exists(snap_path):
+        return
+    z = np.load(snap_path, allow_pickle=True)
+    for ag, eps in res.episodes.items():
+        for f in z.files:
+            if f.startswith(f"adiag::{ag}::") and f.endswith("::eps"):
                 k = f[len(f"adiag::{ag}::") : -len("::eps")]
                 vals = z[f"adiag::{ag}::{k}::vals"]
                 for i, m in enumerate(z[f]):
                     eps[int(m)].diagnostics[k] = vals[i]
-        res.episodes[ag] = eps
-    return res
 
 
 # --------------------------------------------------- ExperimentConfig <-> json
@@ -124,20 +147,30 @@ def _seed_num(path: str) -> int:
     return int(os.path.basename(path)[5:-4])  # seed_<n>.npz
 
 
-def load_point(out_dir: str):
-    """Load one point -> (results sorted by seed, config) from the per-seed npz layout."""
-    seed_files = sorted(glob.glob(os.path.join(out_dir, SEED_GLOB)), key=_seed_num)
+def load_point(out_dir: str, with_snapshots: bool = False):
+    """Load one point -> (results sorted by seed, config) from the per-seed npz layout.
+    Heavy parameter snapshots live in sibling seed_N_snapshots.npz and are loaded only when
+    with_snapshots=True (dashboards/replot); the figure path leaves them on disk."""
+    seed_files = sorted(
+        (p for p in glob.glob(os.path.join(out_dir, SEED_GLOB))
+         if not p.endswith("_snapshots.npz")),  # the sibling snapshot files also match SEED_GLOB
+        key=_seed_num,
+    )
     if not seed_files:
         raise FileNotFoundError(f"No {SEED_GLOB} files in {out_dir}")
-    results = sorted((seed_from_npz(p) for p in seed_files), key=lambda r: r.seed)
+    results = sorted(
+        (seed_from_npz(p, with_snapshots=with_snapshots) for p in seed_files),
+        key=lambda r: r.seed,
+    )
     return results, config_from_json(os.path.join(out_dir, CONFIG_NAME))
 
 
-def load_study(study_dir: str) -> dict:
+def load_study(study_dir: str, with_snapshots: bool = False) -> dict:
     """Load every point under a study dir -> {point_name: (results, config)}."""
     out = {}
     for entry in sorted(os.listdir(study_dir)):
         d = os.path.join(study_dir, entry)
-        if glob.glob(os.path.join(d, SEED_GLOB)):
-            out[entry] = load_point(d)
+        if any(not p.endswith("_snapshots.npz")
+               for p in glob.glob(os.path.join(d, SEED_GLOB))):
+            out[entry] = load_point(d, with_snapshots=with_snapshots)
     return out
