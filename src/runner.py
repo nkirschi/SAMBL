@@ -12,7 +12,11 @@ from typing import Dict, List
 
 from dynamics import ContinuousLQREnv
 from estimator import RegressionBuffer, DiscreteRidgeEstimator, RowLassoEstimator
-from system_generator import sample_synthetic_system, sample_spring_chain, sample_ieee39
+from system_generator import (
+    sample_synthetic_system,
+    sample_spring_chain,
+    sample_ieee39,
+)
 from planner import RiccatiODESolver
 from agent import LinearControlAgent
 from diagnostics import (
@@ -248,11 +252,9 @@ def run_paired_experiment(
                 t = k * sys.dt
                 current_step = m * H + k
 
-                # initial pure exploration for greedy agents
-                if (
-                    name in ["dense_greedy", "sparse_greedy"]
-                    and current_step < exploration_steps
-                ):
+                # initial pure exploration for every learning agent (equal grounds:
+                # the exploration episode is a shared protocol element, not greedy-only)
+                if name != "oracle" and current_step < exploration_steps:
                     u = shared_exploration[m, k]
                 else:
                     u = agent.get_control(t, x, rngs[name])
@@ -319,7 +321,7 @@ def find_result_dirs(path: str) -> list[str]:
     """
 
     def _is_result_dir(files):
-        return any(f.startswith("seed_") and f.endswith(".npz") for f in files)
+        return any(f.startswith("seed_") and f.endswith(".npz") and not f.endswith("_snapshots.npz") for f in files)
 
     if _is_result_dir(os.listdir(path)):
         return [path]
