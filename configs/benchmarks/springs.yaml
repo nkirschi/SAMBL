@@ -1,11 +1,10 @@
-# Spring-mass chain benchmark: d=20 -> n=10 masses, p=5 actuators (half), s=3 (banded)
 name: springs
 
 system:
   family: spring_chain
-  d: 20          # = 2n
-  p: 5           # actuators = n/2 (p/d = 1/4)
-  s_A: 3         # max velocity-row A-sparsity (nearest-neighbour band)
+  d: 20
+  p: 5
+  s_A: 3
   s_B: 1
   k_min: 0.5
   k_max: 2.0
@@ -23,9 +22,9 @@ cost:
   r_scale: 1.0
 
 training:
-  max_episodes: 200
-  n_seeds: 25
-  m_explore: 0
+  max_episodes: 1000
+  n_seeds: 20
+  m_explore: 1
 
 agents:
   - oracle
@@ -41,6 +40,7 @@ estimation:
   mu_ridge: 1.0e-6
   lasso_max_iter: 10000
   lasso_tol: 1.0e-4
+  n_fit_threads: 4
 
 excitation:
   sigma_u: 0.05

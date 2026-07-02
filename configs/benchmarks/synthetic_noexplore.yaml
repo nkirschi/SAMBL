@@ -1,4 +1,4 @@
-name: synthetic
+name: synthetic_noexplore
 
 system:
   family: synthetic
@@ -25,7 +25,7 @@ cost:
 training:
   max_episodes: 1000
   n_seeds: 20
-  m_explore: 1
+  m_explore: 0
 
 agents:
   - oracle

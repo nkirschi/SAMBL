@@ -1,4 +1,4 @@
-base: synthetic
+base: synthetic_noexplore
 vary:
   - {name: d10,  d: 10,  p: 5,   n_fit_threads: 1}
   - {name: d20,  d: 20,  p: 10,  n_fit_threads: 1}

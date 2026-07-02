@@ -1,9 +1,20 @@
-# Vary excitation noise level; base system is synthetic_d10
-base: synthetic_d10
+base: excitation
 vary:
-  - {sigma_u: 0.00}
-  - {sigma_u: 0.05}
-  - {sigma_u: 0.10}
-  - {sigma_u: 0.15}
-  - {sigma_u: 0.20}
-  - {sigma_u: 0.35}
+  - {name: d10_su0.0,   d: 10, p: 5,  sigma_u: 0.0}
+  - {name: d10_su0.025, d: 10, p: 5,  sigma_u: 0.025}
+  - {name: d10_su0.05,  d: 10, p: 5,  sigma_u: 0.05}
+  - {name: d10_su0.1,   d: 10, p: 5,  sigma_u: 0.1}
+  - {name: d10_su0.2,   d: 10, p: 5,  sigma_u: 0.2}
+  - {name: d10_su0.4,   d: 10, p: 5,  sigma_u: 0.4}
+  - {name: d20_su0.0,   d: 20, p: 10, sigma_u: 0.0}
+  - {name: d20_su0.025, d: 20, p: 10, sigma_u: 0.025}
+  - {name: d20_su0.05,  d: 20, p: 10, sigma_u: 0.05}
+  - {name: d20_su0.1,   d: 20, p: 10, sigma_u: 0.1}
+  - {name: d20_su0.2,   d: 20, p: 10, sigma_u: 0.2}
+  - {name: d20_su0.4,   d: 20, p: 10, sigma_u: 0.4}
+  - {name: d50_su0.0,   d: 50, p: 25, sigma_u: 0.0}
+  - {name: d50_su0.025, d: 50, p: 25, sigma_u: 0.025}
+  - {name: d50_su0.05,  d: 50, p: 25, sigma_u: 0.05}
+  - {name: d50_su0.1,   d: 50, p: 25, sigma_u: 0.1}
+  - {name: d50_su0.2,   d: 50, p: 25, sigma_u: 0.2}
+  - {name: d50_su0.4,   d: 50, p: 25, sigma_u: 0.4}

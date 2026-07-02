@@ -1,9 +1,9 @@
-name: synthetic
+name: excitation
 
 system:
   family: synthetic
-  d: 20
-  p: 10
+  d: 10
+  p: 5
   s_A: 2
   s_B: 1
   a_min: 0.1
@@ -29,8 +29,6 @@ training:
 
 agents:
   - oracle
-  - dense_greedy
-  - dense_excited
   - sparse_greedy
   - sparse_excited
 
@@ -41,7 +39,7 @@ estimation:
   mu_ridge: 1.0e-6
   lasso_max_iter: 10000
   lasso_tol: 1.0e-4
-  n_fit_threads: 4
+  n_fit_threads: 2
 
 excitation:
   sigma_u: 0.05

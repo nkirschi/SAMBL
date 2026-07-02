@@ -1,7 +1,8 @@
-base: synthetic_d10
+base: synthetic
 vary:
-  - {r_scale: 1.0}
-  - {r_scale: 0.5}
-  - {r_scale: 0.2}
-  - {r_scale: 0.1}
-  - {r_scale: 2.0}
+  - {name: r0.1, d: 100, p: 50, r_scale: 0.1}
+  - {name: r0.2, d: 100, p: 50, r_scale: 0.2}
+  - {name: r0.5, d: 100, p: 50, r_scale: 0.5}
+  - {name: r1.0, d: 100, p: 50, r_scale: 1.0}
+  - {name: r2.0, d: 100, p: 50, r_scale: 2.0}
+  - {name: r5.0, d: 100, p: 50, r_scale: 5.0}

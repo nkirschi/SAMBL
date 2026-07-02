@@ -1,7 +1,0 @@
-# Vary control dimension p; s_B scales to stay within bounds.
-base: synthetic_d20
-vary:
-  - {name: p2,  p: 2,  s_B: 1}
-  - {name: p5,  p: 5,  s_B: 1}
-  - {name: p10, p: 10, s_B: 2}
-  - {name: p20, p: 20, s_B: 3}
