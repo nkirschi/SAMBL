@@ -742,6 +742,43 @@ def fig_anchor(res, cfg, outdir, fname="anchor.pdf", suptitle=None):
     plt.close(fig)
 
 
+# --------------------------------------- single-point diagnostics (2x2, e.g. d=500)
+def fig_singlepoint_diagnostics(res, cfg, outdir, fname="singlepoint.pdf"):
+    # Emits <base>_{a,b,c,d}.pdf for a 2x2 LaTeX subfigure block: (a) cumulative regret,
+    # (b) relative parameter error, (c) restricted Gram min eigenvalue, (d) support F1 --
+    # the per-episode single-point view of one sweep point (median, IQR shaded).
+    M = cfg.max_episodes
+    m = np.arange(1, M + 1)
+    base = fname[:-4] if fname.endswith(".pdf") else fname
+
+    def panel(ylabel, yscale, tag, series, legend=False, ylim=None):
+        fig, ax = plt.subplots(figsize=(6, 4.2))
+        for agent in LEARNING:
+            med, lo, hi = _med_iqr(series(agent))
+            c, ls, _, lab = STYLE[agent]
+            ax.plot(m, med, color=c, ls=ls, lw=1.6, label=lab)
+            ax.fill_between(m, lo, hi, color=c, alpha=0.15)
+        ax.set_yscale(yscale)
+        ax.set_xlabel("episode $m$")
+        ax.set_ylabel(ylabel)
+        if ylim:
+            ax.set_ylim(*ylim)
+        if legend:
+            ax.legend()
+        fig.tight_layout()
+        _save(fig, os.path.join(outdir, f"{base}_{tag}.pdf"))
+        plt.close(fig)
+
+    panel(r"cumulative regret $R_m$", "linear", "a",
+          lambda ag: np.cumsum(_per_ep_regret(res, ag), axis=1), legend=True)
+    panel(r"parameter error $\|\hat{\mathbf{\Theta}}_m-\mathbf{\Theta}_\star\|_F/\|\mathbf{\Theta}_\star\|_F$",
+          "log", "b", lambda ag: _traj(res, ag, "error_joint"))
+    panel(r"restricted Gram min.\ eigenvalue", "log", "c",
+          lambda ag: _traj(res, ag, "gram_min_eig"))
+    panel(r"support $F_1$", "linear", "d",
+          lambda ag: _traj(res, ag, "support_f1_joint"))
+
+
 # ------------------------------------------------ J. sparsity sweep (fixed d, vary s)
 def fig_sparsity(sweep, outdir):
     # Emits sparsity_a.pdf (regret vs s) and sparsity_b.pdf (advantage vs s) for LaTeX subfigures.
@@ -1175,6 +1212,9 @@ def main():
         print("  [D] A/B asymmetry")
     fig_btqb_cond(sweep, args.out)
     print("  [F] cond(B^T Q B) vs d")
+    if 500 in sweep:
+        fig_singlepoint_diagnostics(*sweep[500], args.out, fname="singlepoint_d500.pdf")
+        print("  [E] single-point diagnostics d=500")
     if os.path.isdir(args.clambda_dir):
         fig_hyperparam(args.clambda_dir, args.out)
         print("  [G] c_lambda sweep")
