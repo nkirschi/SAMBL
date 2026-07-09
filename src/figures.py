@@ -28,12 +28,14 @@ matplotlib.rcParams.update(
         "text.usetex": True,
         "text.latex.preamble": r"\usepackage{amsmath}\usepackage{amssymb}\usepackage{bm}",
         "font.family": "serif",
-        "font.size": 11,
-        "axes.labelsize": 12,
-        "axes.titlesize": 12,
-        "legend.fontsize": 9,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
+        # Sized for multi-subfigure use: most figures render at 0.3-0.5\linewidth, so
+        # fonts are chosen ~2pt larger than for a standalone full-width figure.
+        "font.size": 13,
+        "axes.labelsize": 14,
+        "axes.titlesize": 14,
+        "legend.fontsize": 11,
+        "xtick.labelsize": 12,
+        "ytick.labelsize": 12,
         "axes.grid": True,
         "grid.alpha": 0.3,
         "savefig.bbox": "tight",
@@ -186,6 +188,7 @@ def fig_exploration_ablation(dirs0, dirs1, outdir, fname="exploration.pdf"):
     import gc
 
     def collect(dirs):
+        # per d: (median, q25, q75) across seeds, for the IQR bands
         ds, spd, gram = [], [], []
         for d in sorted(dirs):
             try:
@@ -193,20 +196,20 @@ def fig_exploration_ablation(dirs0, dirs1, outdir, fname="exploration.pdf"):
             except Exception:
                 continue
             ds.append(d)
-            spd.append(float(np.median(_basin_speedup(res))))
+            sp = _basin_speedup(res)
+            gm = [
+                r.diagnostic_trajectory("sparse_greedy", "gram_min_eig")[-1]
+                for r in res
+            ]
+            spd.append(
+                [np.median(sp), np.percentile(sp, 25), np.percentile(sp, 75)]
+            )
             gram.append(
-                float(
-                    np.median(
-                        [
-                            r.diagnostic_trajectory("sparse_greedy", "gram_min_eig")[-1]
-                            for r in res
-                        ]
-                    )
-                )
+                [np.median(gm), np.percentile(gm, 25), np.percentile(gm, 75)]
             )
             del res
             gc.collect()
-        return ds, spd, gram
+        return ds, np.array(spd), np.array(gram)
 
     d0, spd0, g0 = collect(dirs0)
     d1, spd1, g1 = collect(dirs1)
@@ -219,8 +222,10 @@ def fig_exploration_ablation(dirs0, dirs1, outdir, fname="exploration.pdf"):
 
     # (a) basin-entry speedup vs d
     fig, ax = plt.subplots(figsize=(6, 4.2))
-    ax.plot(d0, spd0, color=C0, marker="o", ms=5, label=L0)
-    ax.plot(d1, spd1, color=C1, marker="s", ms=5, label=L1)
+    ax.plot(d0, spd0[:, 0], color=C0, marker="o", ms=5, label=L0)
+    ax.fill_between(d0, spd0[:, 1], spd0[:, 2], color=C0, alpha=0.15)
+    ax.plot(d1, spd1[:, 0], color=C1, marker="s", ms=5, label=L1)
+    ax.fill_between(d1, spd1[:, 1], spd1[:, 2], color=C1, alpha=0.15)
     ax.axhline(
         1.0, color="grey", ls=":", lw=1
     )  # break-even: below = advantage reversed
@@ -236,13 +241,15 @@ def fig_exploration_ablation(dirs0, dirs1, outdir, fname="exploration.pdf"):
 
     # (b) control-block restricted-Gram minimum eigenvalue vs d
     fig, ax = plt.subplots(figsize=(6, 4.2))
-    ax.plot(d0, g0, color=C0, marker="o", ms=5, label=L0)
-    ax.plot(d1, g1, color=C1, marker="s", ms=5, label=L1)
+    ax.plot(d0, g0[:, 0], color=C0, marker="o", ms=5, label=L0)
+    ax.fill_between(d0, g0[:, 1], g0[:, 2], color=C0, alpha=0.15)
+    ax.plot(d1, g1[:, 0], color=C1, marker="s", ms=5, label=L1)
+    ax.fill_between(d1, g1[:, 1], g1[:, 2], color=C1, alpha=0.15)
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("dimension $d$")
     ax.set_ylabel(
-        r"$\min_i \lambda_{\min}(\mathbf{Z}_{S_i}^\top \mathbf{Z}_{S_i}/N_m)$"
+        r"$\min_i \lambda_{\min}(\mathbf{Z}_{S_i}^\top \mathbf{Z}_{S_i}/N_M)$"
     )
     ax.set_xticks(d0 or d1)
     ax.set_xticklabels(d0 or d1)
@@ -264,16 +271,23 @@ def fig_discretisation(study_dir, outdir, fname="discretisation.pdf"):
     for name in sorted(os.listdir(study_dir)):
         d = os.path.join(study_dir, name)
         if not os.path.isdir(d) or not any(
-            f.startswith("seed_") and not f.endswith("_snapshots.npz") for f in os.listdir(d)
+            f.startswith("seed_") and not f.endswith("_snapshots.npz")
+            for f in os.listdir(d)
         ):
             continue
         res, cfg = load_point(d)
         dg = np.array([r.cumulative_regret("dense_greedy")[-1] for r in res])
         sg = np.array([r.cumulative_regret("sparse_greedy")[-1] for r in res])
-        eA = np.array([r.diagnostic_trajectory("sparse_greedy", "error_A")[-1] for r in res])
-        eB = np.array([r.diagnostic_trajectory("sparse_greedy", "error_B")[-1] for r in res])
+        eA = np.array(
+            [r.diagnostic_trajectory("sparse_greedy", "error_A")[-1] for r in res]
+        )
+        eB = np.array(
+            [r.diagnostic_trajectory("sparse_greedy", "error_B")[-1] for r in res]
+        )
         # each entry: (dt, (med, q25, q75) x {dense reg, sparse reg, err_A, err_B})
-        pts.append((cfg.system.dt, _med_iqr(dg), _med_iqr(sg), _med_iqr(eA), _med_iqr(eB)))
+        pts.append(
+            (cfg.system.dt, _med_iqr(dg), _med_iqr(sg), _med_iqr(eA), _med_iqr(eB))
+        )
         del res
         gc.collect()
     pts.sort()
@@ -346,7 +360,7 @@ def _knee_band(sm, M, d, fac=1.8):
     if not (slopes[j] < -0.8):  # nothing steeper than the m^-1 tail => no clear knee
         return None
     m_k = j + 1
-    hw = 0.04 + 0.03 * np.log10(max(d, 2))
+    hw = 0.02 + 0.015 * np.log10(max(d, 2))
     return (m_k * 10.0 ** (-hw), m_k * 10.0**hw)
 
 
@@ -434,7 +448,7 @@ def fig_speedup_vs_d(sweep, outdir):
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("dimension $d$")
-    ax.set_ylabel(r"basin-entry speedup $m_0^{d}/m_0^{s}$")
+    ax.set_ylabel(r"basin-entry speedup $m_0^{\mathrm{dense}}/m_0^{\mathrm{sparse}}$")
     ax.set_xticks(ds)
     ax.set_xticklabels(ds)
     ax.set_title("(c) Basin-entry speedup vs theory")
@@ -476,7 +490,7 @@ def fig_ab_asymmetry(res, cfg, outdir):
     )  # clip the early transient to expose the late-episode plateau gap
     ax.set_xlabel("episode $m$")
     ax.set_ylabel("relative parameter error")
-    ax.legend(ncol=2, fontsize=8)
+    ax.legend(ncol=2, fontsize=10)
     fig.tight_layout()
     _save(fig, os.path.join(outdir, "ab_asymmetry.pdf"))
     plt.close(fig)
@@ -515,7 +529,7 @@ def fig_btqb_cond(sweep, outdir):
     ax.set_ylabel(r"$\kappa(\mathbf{B}_\star^\top \mathbf{Q}\, \mathbf{B}_\star)$")
     ax.set_xticks(ds)
     ax.set_xticklabels(ds)
-    ax.legend()
+    # ax.legend()
     fig.tight_layout()
     _save(fig, os.path.join(outdir, "btqb_condition.pdf"))
     plt.close(fig)
@@ -609,7 +623,9 @@ def fig_excitation(study_dir, outdir, chosen=0.05):
     by_d = {}
     for res, cfg in study.values():
         fr = _final_regret(res, "sparse_excited")
-        by_d.setdefault(cfg.system.d, []).append((cfg.excitation.sigma_u, *_med_iqr(fr)))
+        by_d.setdefault(cfg.system.d, []).append(
+            (cfg.excitation.sigma_u, *_med_iqr(fr))
+        )
     fig, ax = plt.subplots(figsize=(6, 4.2))
     palette = (
         OK["green"],
@@ -623,7 +639,9 @@ def fig_excitation(study_dir, outdir, chosen=0.05):
         pts = sorted(by_d[d])
         xs = [p[0] for p in pts]
         ax.plot(xs, [p[1] for p in pts], color=col, marker="o", ms=4, label=f"$d={d}$")
-        ax.fill_between(xs, [p[2] for p in pts], [p[3] for p in pts], color=col, alpha=0.15)
+        ax.fill_between(
+            xs, [p[2] for p in pts], [p[3] for p in pts], color=col, alpha=0.15
+        )
     ax.axvline(
         chosen, color="black", ls="--", lw=1.2, label=rf"chosen $\sigma_u={chosen}$"
     )
@@ -672,7 +690,7 @@ def fig_cost(study_dir, outdir):
     ax.axhline(1.0, color="grey", ls=":", lw=1)
     ax.set_xscale("log")
     ax.set_xlabel(r"control-cost scale $r$ (with $q=1$)")
-    ax.set_ylabel("dense / sparse regret ratio")
+    ax.set_ylabel("dense-to-sparse regret ratio")
     ax.legend()
     fig.tight_layout()
     _save(fig, os.path.join(outdir, "cost_a.pdf"))
@@ -689,7 +707,7 @@ def fig_cost(study_dir, outdir):
         ax.plot(m, med, color=col, ls=ls, lw=1.6, label=lab)
     ax.set_yscale("log")
     ax.set_xlabel("episode $m$")
-    ax.set_ylabel("per-episode regret")
+    ax.set_ylabel(r"per-episode regret $r_m$ (median)")
     ax.legend()
     fig.tight_layout()
     _save(fig, os.path.join(outdir, "cost_b.pdf"))
@@ -736,7 +754,7 @@ def fig_anchor(res, cfg, outdir, fname="anchor.pdf", suptitle=None):
     ax.set_yscale("log")
     ax.set_xlabel("episode $m$")
     ax.set_ylabel("relative parameter error")
-    ax.legend(ncol=2, fontsize=8)
+    ax.legend(ncol=2, fontsize=10)
     fig.tight_layout()
     _save(fig, os.path.join(outdir, f"{base}_b.pdf"))
     plt.close(fig)
@@ -772,14 +790,20 @@ def fig_ieee39_topology(res, cfg, outdir, fname="ieee39_topology.pdf"):
     d = T_star.shape[0]
 
     for tag, mat, cbar in panels:
-        fig, ax = plt.subplots(figsize=(4.9, 4.0) if cbar else (4.0, 4.0),
-                               constrained_layout=True)
+        fig, ax = plt.subplots(
+            figsize=(4.9, 4.0) if cbar else (4.0, 4.0), constrained_layout=True
+        )
         masked = np.ma.masked_less(mat, vmin)
-        im = ax.imshow(masked, norm=LogNorm(vmin=vmin, vmax=vmax), cmap="Greys",
-                       aspect="auto", interpolation="nearest")
+        im = ax.imshow(
+            masked,
+            norm=LogNorm(vmin=vmin, vmax=vmax),
+            cmap="Greys",
+            aspect="auto",
+            interpolation="nearest",
+        )
         ax.axvline(d - 0.5, color=OK["vermillion"], lw=0.9)
         ax.set_xlabel(r"column (state $\mid$ input)")
-        ax.tick_params(labelsize=8)
+        ax.tick_params(labelsize=10)
         if tag == "a":
             ax.set_ylabel("row")
         if cbar:
@@ -788,17 +812,20 @@ def fig_ieee39_topology(res, cfg, outdir, fname="ieee39_topology.pdf"):
         plt.close(fig)
 
 
-# --------------------------------------- single-point diagnostics (2x2, e.g. d=500)
+# --------------------------------------- single-point diagnostics (3x2, e.g. d=500)
 def fig_singlepoint_diagnostics(res, cfg, outdir, fname="singlepoint.pdf"):
-    # Emits <base>_{a,b,c,d}.pdf for a 2x2 LaTeX subfigure block: (a) cumulative regret,
-    # (b) relative parameter error, (c) restricted Gram min eigenvalue, (d) support F1 --
-    # the per-episode single-point view of one sweep point (median, IQR shaded).
+    # Emits <base>_{a..f}.pdf for a 3x2 LaTeX subfigure block: (a) cumulative regret,
+    # (b) restricted Gram min eigenvalue, (c/d) relative parameter error of the drift
+    # and control blocks, (e/f) support F1 of the drift and control blocks -- the
+    # per-episode single-point view of one sweep point (median, IQR shaded). The two
+    # panels of each split row share y-limits so A and B are directly comparable.
     M = cfg.max_episodes
     m = np.arange(1, M + 1)
     base = fname[:-4] if fname.endswith(".pdf") else fname
 
     def panel(ylabel, yscale, tag, series, legend=False, ylim=None):
-        fig, ax = plt.subplots(figsize=(6, 4.2))
+        # squatter than the usual (6, 4.2) so three subfigure rows fit one page
+        fig, ax = plt.subplots(figsize=(6, 3.6))
         for agent in LEARNING:
             med, lo, hi = _med_iqr(series(agent))
             c, ls, _, lab = STYLE[agent]
@@ -815,20 +842,66 @@ def fig_singlepoint_diagnostics(res, cfg, outdir, fname="singlepoint.pdf"):
         _save(fig, os.path.join(outdir, f"{base}_{tag}.pdf"))
         plt.close(fig)
 
-    panel(r"cumulative regret $R_m$", "linear", "a",
-          lambda ag: np.cumsum(_per_ep_regret(res, ag), axis=1), legend=True)
-    panel(r"parameter error $\|\hat{\mathbf{\Theta}}_m-\mathbf{\Theta}_\star\|_F/\|\mathbf{\Theta}_\star\|_F$",
-          "log", "b", lambda ag: _traj(res, ag, "error_joint"))
-    panel(r"restricted Gram min.\ eigenvalue", "log", "c",
-          lambda ag: _traj(res, ag, "gram_min_eig"))
-    panel(r"support $F_1$", "linear", "d",
-          lambda ag: _traj(res, ag, "support_f1_joint"))
+    def shared_ylim(keys, pad=1.3):
+        bands = [_med_iqr(_traj(res, ag, k)) for k in keys for ag in LEARNING]
+        return (
+            min(np.nanmin(lo) for _, lo, _ in bands) / pad,
+            max(np.nanmax(hi) for _, _, hi in bands) * pad,
+        )
+
+    panel(
+        r"cumulative regret $R_m$",
+        "linear",
+        "a",
+        lambda ag: np.cumsum(_per_ep_regret(res, ag), axis=1),
+        legend=True,
+    )
+    panel(
+        r"restricted Gram min.\ eigenvalue",
+        "log",
+        "b",
+        lambda ag: _traj(res, ag, "gram_min_eig"),
+    )
+    err_ylim = shared_ylim(["error_A", "error_B"])
+    panel(
+        r"parameter error $\|\hat{\mathbf{A}}_m-\mathbf{A}_\star\|_F/\|\mathbf{A}_\star\|_F$",
+        "log",
+        "c",
+        lambda ag: _traj(res, ag, "error_A"),
+        ylim=err_ylim,
+    )
+    panel(
+        r"parameter error $\|\hat{\mathbf{B}}_m-\mathbf{B}_\star\|_F/\|\mathbf{B}_\star\|_F$",
+        "log",
+        "d",
+        lambda ag: _traj(res, ag, "error_B"),
+        ylim=err_ylim,
+    )
+    f1_ylim = (0.0, 1.05)
+    panel(
+        r"support $F_1$ in $\mathbf{A}$",
+        "linear",
+        "e",
+        lambda ag: _traj(res, ag, "support_f1_A"),
+        ylim=f1_ylim,
+    )
+    panel(
+        r"support $F_1$ in $\mathbf{B}$",
+        "linear",
+        "f",
+        lambda ag: _traj(res, ag, "support_f1_B"),
+        ylim=f1_ylim,
+    )
 
 
 # ------------------------------------------------ J. sparsity sweep (fixed d, vary s)
 def fig_sparsity(sweep, outdir):
     # Emits sparsity_a.pdf (regret vs s) and sparsity_b.pdf (advantage vs s) for LaTeX subfigures.
+    # The x-axis is inverted (s decreasing rightward) so that "the advantage grows as the
+    # system gets sparser" reads left-to-right; tick labels thin out toward large s, where
+    # the log scale would otherwise crowd them.
     ss = sorted(sweep)
+    tick_ss = [s for s in (2, 4, 6, 8, 12, 16, 24, 32, 50) if s in sweep]
 
     # (a) dense-to-sparse regret ratio vs s -- scale-independent, matched per seed
     fig, ax = plt.subplots(figsize=(6, 4.2))
@@ -846,10 +919,12 @@ def fig_sparsity(sweep, outdir):
         ax.fill_between(ss, lo, hi, color=c, alpha=0.15)
     ax.axhline(1.0, color="grey", ls=":", lw=1)
     ax.set_xscale("log")
-    ax.set_xlabel("row sparsity $s$")
+    ax.set_xlabel(r"row support size $s$ (sparser $\rightarrow$)")
     ax.set_ylabel("dense-to-sparse regret ratio")
-    ax.set_xticks(ss)
-    ax.set_xticklabels(ss)
+    ax.set_xticks(tick_ss)
+    ax.set_xticklabels(tick_ss)
+    ax.minorticks_off()
+    ax.invert_xaxis()
     ax.legend()
     fig.tight_layout()
     _save(fig, os.path.join(outdir, "sparsity_a.pdf"))
@@ -874,10 +949,12 @@ def fig_sparsity(sweep, outdir):
     )
     ax.axhline(1.0, color="grey", ls=":", lw=1)
     ax.set_xscale("log")
-    ax.set_xlabel("row sparsity $s$")
+    ax.set_xlabel(r"row support size $s$ (sparser $\rightarrow$)")
     ax.set_ylabel(r"basin-entry speedup $m_0^{\mathrm{dense}}/m_0^{\mathrm{sparse}}$")
-    ax.set_xticks(ss)
-    ax.set_xticklabels(ss)
+    ax.set_xticks(tick_ss)
+    ax.set_xticklabels(tick_ss)
+    ax.minorticks_off()
+    ax.invert_xaxis()
     ax.legend()
     fig.tight_layout()
     _save(fig, os.path.join(outdir, "sparsity_b.pdf"))
@@ -916,7 +993,7 @@ def fig_regret_decomposition_theory(outdir):
         m0 / 2,
         regret_m0 * 1.0,
         r"${O}(\sqrt{m_0 \Lambda})$",
-        fontsize=13,
+        fontsize=14,
         ha="center",
         va="center",
         color=c_trans,
@@ -925,7 +1002,7 @@ def fig_regret_decomposition_theory(outdir):
         (M + m0) / 2,
         regret_m0 + c2 * np.log(M / m0),
         r"${O}(\Lambda \log(M / m_0))$",
-        fontsize=13,
+        fontsize=14,
         ha="center",
         va="center",
         color=c_log,
@@ -934,7 +1011,7 @@ def fig_regret_decomposition_theory(outdir):
     ax.set_xlim(0, M)
     ax.set_ylim(0, np.max(regret_log) + 5)
     ax.set_xlabel("episode $m$")
-    ax.set_ylabel("cumulative regret $R_M$")
+    ax.set_ylabel("cumulative regret $R_m$")
     ax.set_xticks([0, m0, M])
     ax.set_xticklabels(["$0$", "$m_0$", "$M$"])
     ax.set_yticks([])
@@ -999,7 +1076,7 @@ def fig_spring_illustration(outdir):
             va="center",
             zorder=4,
             color="white" if actuated else "black",
-            fontsize=11,
+            fontsize=12,
         )
         if actuated:
             # control force acts along the chain axis (masses only translate sideways)
@@ -1019,7 +1096,7 @@ def fig_spring_illustration(outdir):
                 0.53,
                 f"$u_{{{act.index(i) + 1}}}$",
                 color=OK["vermillion"],
-                fontsize=11,
+                fontsize=12,
                 ha="center",
             )
     ax1.set_xlim(-0.5, N + 1.5)
@@ -1134,7 +1211,7 @@ def fig_ieee39_illustration(outdir):
             ax1.annotate(
                 str(bus),
                 (x, y),
-                fontsize=7,
+                fontsize=8,
                 ha="center",
                 va="center",
                 color="white",
@@ -1171,7 +1248,7 @@ def fig_ieee39_illustration(outdir):
         loc="upper center",
         bbox_to_anchor=(0.5, -0.01),
         ncol=3,
-        fontsize=8,
+        fontsize=10,
         frameon=False,
         handletextpad=0.3,
         columnspacing=1.0,
@@ -1293,7 +1370,8 @@ def main():
         print("  [H] spring-chain scaling skipped (no results/spring/)")
 
     if os.path.isdir(args.ieee39_dir) and any(
-        f.startswith("seed_") and not f.endswith("_snapshots.npz") for f in os.listdir(args.ieee39_dir)
+        f.startswith("seed_") and not f.endswith("_snapshots.npz")
+        for f in os.listdir(args.ieee39_dir)
     ):
         fig_anchor(
             *load_point(args.ieee39_dir),
