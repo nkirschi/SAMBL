@@ -992,7 +992,7 @@ def fig_regret_decomposition_theory(outdir):
     ax.text(
         m0 / 2,
         regret_m0 * 1.0,
-        r"${O}(\sqrt{m_0 \Lambda})$",
+        r"${O}(\sqrt{m \Lambda})$",
         fontsize=14,
         ha="center",
         va="center",
@@ -1001,7 +1001,7 @@ def fig_regret_decomposition_theory(outdir):
     ax.text(
         (M + m0) / 2,
         regret_m0 + c2 * np.log(M / m0),
-        r"${O}(\Lambda \log(M / m_0))$",
+        r"${O}(\Lambda \log(m / m_0))$",
         fontsize=14,
         ha="center",
         va="center",
